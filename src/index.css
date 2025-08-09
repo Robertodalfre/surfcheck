@@ -1,0 +1,108 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design System - Surf App */
+@layer base {
+  :root {
+    /* Core Colors - HSL format */
+    --background: 0 0% 2%;
+    --foreground: 0 0% 98%;
+    
+    /* Ocean Blue System */
+    --ocean-primary: 195 100% 47%;
+    --ocean-primary-foreground: 0 0% 98%;
+    --ocean-muted: 195 100% 20%;
+    --ocean-accent: 195 60% 60%;
+    
+    /* Surf Status Colors */
+    --surf-epic: 195 100% 47%;
+    --surf-good: 195 80% 55%;
+    --surf-ok: 45 100% 60%;
+    --surf-bad: 0 60% 55%;
+    
+    /* Surface Colors */
+    --surface: 0 0% 8%;
+    --surface-elevated: 0 0% 12%;
+    --muted: 0 0% 40%;
+    --muted-foreground: 0 0% 70%;
+    
+    /* Interactive */
+    --primary: var(--ocean-primary);
+    --primary-foreground: var(--ocean-primary-foreground);
+    --accent: var(--surface-elevated);
+    --accent-foreground: var(--foreground);
+    
+    --border: 0 0% 20%;
+    --ring: var(--ocean-primary);
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom Surf Components */
+@layer components {
+  .surf-hero {
+    @apply text-center space-y-4;
+  }
+  
+  .surf-status-epic {
+    @apply text-6xl md:text-8xl font-black bg-gradient-to-r from-ocean-primary to-ocean-accent bg-clip-text text-transparent;
+  }
+  
+  .surf-status-good {
+    @apply text-6xl md:text-8xl font-black text-ocean-primary;
+  }
+  
+  .surf-status-ok {
+    @apply text-6xl md:text-8xl font-black text-yellow-400;
+  }
+  
+  .surf-status-bad {
+    @apply text-6xl md:text-8xl font-black text-red-400;
+  }
+  
+  .surf-condition-card {
+    @apply flex flex-col items-center space-y-2 p-4 rounded-2xl bg-surface border border-border/50;
+  }
+  
+  .surf-spot-chip {
+    @apply flex-shrink-0 px-4 py-2 rounded-full bg-surface border border-border/50 text-sm whitespace-nowrap;
+  }
+  
+  .ocean-gradient {
+    background: linear-gradient(135deg, hsl(var(--ocean-primary)) 0%, hsl(var(--ocean-accent)) 100%);
+  }
+}
+
+/* Animations */
+@layer utilities {
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  .animate-wave {
+    animation: wave 2s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes wave {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.1); }
+}
