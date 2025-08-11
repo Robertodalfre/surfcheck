@@ -19,6 +19,53 @@ const Index = () => {
   const [otherSpots, setOtherSpots] = useState<{ id: string; name: string; status: 'good'|'ok'|'bad'; height: string; }[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchSpots, setSearchSpots] = useState<{ id: string; name: string }[]>([]);
+  // PWA install (beforeinstallprompt)
+  const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
+  const [isInstalled, setIsInstalled] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      // Chrome: permitir mostrar o prompt sob gesto do usuário
+      e.preventDefault?.();
+      // @ts-ignore - event has prompt() and userChoice
+      setInstallPromptEvent(e);
+      console.log('[PWA] beforeinstallprompt capturado');
+    };
+    window.addEventListener('beforeinstallprompt', handler as any);
+    // detectar instalado (standalone)
+    const checkInstalled = () => {
+      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || (navigator as any).standalone === true
+        || document.referrer.startsWith('android-app://');
+      setIsInstalled(!!standalone);
+    };
+    checkInstalled();
+    const onInstalled = () => {
+      console.log('[PWA] appinstalled');
+      setIsInstalled(true);
+      setInstallPromptEvent(null);
+    };
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler as any);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPromptEvent) return;
+    try {
+      // @ts-ignore
+      await installPromptEvent.prompt();
+      // @ts-ignore
+      const choice = await installPromptEvent.userChoice;
+      console.log('[PWA] userChoice', choice);
+    } catch (err) {
+      console.warn('[PWA] install prompt error', err);
+    } finally {
+      setInstallPromptEvent(null);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -203,6 +250,18 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-md mx-auto bg-background">
+        {/* Botão para instalar PWA no topo (mostra apenas se não estiver instalado) */}
+        {!isInstalled && installPromptEvent && (
+          <div className="px-4 pt-3 flex justify-center">
+            <button
+              onClick={handleInstallClick}
+              className="px-3 py-1.5 text-xs rounded-full border border-[#00AEEF] text-[#00AEEF] bg-zinc-900 hover:bg-zinc-900/60"
+            >
+              Instalar app
+            </button>
+          </div>
+        )}
+
         <SurfHeader
           location={currentSpot.location}
           onMenuClick={handleMenuClick}
@@ -218,6 +277,7 @@ const Index = () => {
           prevEnabled={availableSlots.length > 1}
           nextEnabled={availableSlots.length > 1}
         />
+        
 
         {/* Horário selecionado (informativo) */}
         {/* <div className="px-4 mt-2 flex items-center justify-center text-xs text-zinc-400">
