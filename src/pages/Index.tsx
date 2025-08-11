@@ -220,9 +220,9 @@ const Index = () => {
         />
 
         {/* Horário selecionado (informativo) */}
-        <div className="px-4 mt-2 flex items-center justify-center text-xs text-zinc-400">
+        {/* <div className="px-4 mt-2 flex items-center justify-center text-xs text-zinc-400">
           {selectedSlot ? `Horário: ${selectedSlot.replace(':00','h')}` : ''}
-        </div>
+        </div> */}
 
         {/* Chips de horários do dia (06, 09, 12, 15) */}
         <div className="px-4 mt-2 flex justify-center">

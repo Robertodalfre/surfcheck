@@ -227,32 +227,34 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
 
           {/* Conteúdo principal */}
           <div className="flex-1">
-            {/* Top: altura da onda à esquerda; clima à direita */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-4 border-[#00AEEF]">
+            {/* Top: altura da onda à esquerda; clima + botão à direita (responsivo) */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+              {/* Esquerda: onda */}
+              <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-4 border-[#00AEEF] mx-auto sm:mx-0">
                 <div className="text-center">
                   <div className="text-white text-3xl font-bold leading-tight">{loading ? '...' : `${fmt(selectedHour?.wave_height)} m`}</div>
                   <div className="text-[#00AEEF] text-sm font-semibold">{loading ? '' : fmt(selectedHour?.swell_height)}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-white pr-1 self-start">
-                <svg viewBox="0 0 24 24" className="w-9 h-9 stroke-white" fill="none" strokeWidth="1.5">
-                  <path d="M3 15a4 4 0 0 0 4 4h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5-2"/>
-                </svg>
-                <span className="text-white text-lg font-bold">29°</span>
-                
+              {/* Direita: clima e botão empilhados */}
+              <div className="flex flex-col gap-2 sm:items-end w-full">
+                <div className="flex items-center gap-2 text-white self-center sm:self-end">
+                  <svg viewBox="0 0 24 24" className="w-9 h-9 stroke-white" fill="none" strokeWidth="1.5">
+                    <path d="M3 15a4 4 0 0 0 4 4h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5-2"/>
+                  </svg>
+                  <span className="text-white text-lg font-bold">29°</span>
+                </div>
+                <div className="w-full flex justify-center sm:justify-end">
+                  <button
+                    disabled={!dayHours.length}
+                    onClick={() => setShowDetails(true)}
+                    className={`px-3 py-1.5 text-xs rounded-full border ${dayHours.length ? 'border-[#00AEEF] text-[#00AEEF] hover:bg-zinc-900/50' : 'border-zinc-700 text-zinc-500 cursor-not-allowed'}`}
+                  >
+                    Detalhes do dia
+                  </button>
+                </div>
+                {/* <div className="text-xs text-zinc-400 leading-tight text-right mt-1 w-full">{loading ? '' : `Horário: ${fmtTime(selectedHour?.time)}`}</div> */}
               </div>
-              {/* Botão dentro do card, abaixo da temperatura */}
-              <div className="mt-2 w-full flex justify-end">
-                <button
-                  disabled={!dayHours.length}
-                  onClick={() => setShowDetails(true)}
-                  className={`px-3 py-1.5 text-xs rounded-full border ${dayHours.length ? 'border-[#00AEEF] text-[#00AEEF] hover:bg-zinc-900/50' : 'border-zinc-700 text-zinc-500 cursor-not-allowed'}`}
-                >
-                  Detalhes do dia
-                </button>
-              </div>
-              {/* <div className="text-xs text-zinc-400 leading-tight text-right mt-1 w-full">{loading ? '' : `Horário: ${fmtTime(selectedHour?.time)}`}</div> */}
             </div>
 
             {/* Bottom: swell dir + período, vento + velocidade */}
@@ -285,9 +287,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
         {/* Energia/Power badge */}
         {(() => {
           const P = (selectedHour as any)?.power_kwm
-            ?? (Number.isFinite(selectedHour?.wave_height as any) && Number.isFinite(selectedHour?.wave_period as any)
-                ? wavePower(selectedHour?.wave_height, selectedHour?.wave_period)
-                : wavePower(selectedHour?.swell_height, selectedHour?.swell_period));
+            ?? wavePower(selectedHour?.swell_height, selectedHour?.swell_period);
           if (!Number.isFinite(P)) return null;
           const label = powerLabel(P as number);
           return (
@@ -374,9 +374,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
                   // Power stats (kW/m)
                   const hs = dayHours;
                   const arr = hs.map(h => (h as any).power_kwm
-                    ?? (Number.isFinite(h.wave_height as any) && Number.isFinite(h.wave_period as any)
-                        ? wavePower(h.wave_height, h.wave_period)
-                        : wavePower(h.swell_height, h.swell_period))
+                    ?? wavePower(h.swell_height, h.swell_period)
                   ).filter(v => Number.isFinite(v)) as number[];
                   if (!arr.length) return null;
                   const pmin = Math.min(...arr), pmax = Math.max(...arr);
@@ -422,9 +420,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
                   : rank === 3 ? {label: '3º melhor', cls: 'border-emerald-400 text-emerald-400'}
                   : null;
                 const P = (h as any).power_kwm
-                  ?? (Number.isFinite(h.wave_height as any) && Number.isFinite(h.wave_period as any)
-                      ? wavePower(h.wave_height, h.wave_period)
-                      : wavePower(h.swell_height, h.swell_period));
+                  ?? wavePower(h.swell_height, h.swell_period);
                 return (
                   <div key={h.time} className={`relative rounded-md p-2 border ${cls}`}>
                     {badge && (
