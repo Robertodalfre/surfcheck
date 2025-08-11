@@ -142,6 +142,7 @@ function toMinimalPayload(fullPayload, opts) {
         wind_speed: selected.wind_speed,
         wind_direction: selected.wind_direction,
         wave_height: selected.wave_height,
+        power_kwm: selected.power_kwm,
         reasons: selected.reasons,
         meta: selected.meta,
       } : null,
@@ -165,6 +166,7 @@ function toMinimalPayload(fullPayload, opts) {
       wind_speed: current.wind_speed,
       wind_direction: current.wind_direction,
       wave_height: current.wave_height,
+      power_kwm: current.power_kwm,
       reasons: current.reasons,
       meta: current.meta,
     } : null,
@@ -247,6 +249,22 @@ function buildContextAdvice(h, spot) {
     else textureTag = 'mar mexido';
   }
 
+  // Power/energy tag
+  const P = Number.isFinite(h.power_kwm)
+    ? Number(h.power_kwm)
+    : (Number.isFinite(h.wave_height) && Number.isFinite(h.wave_period))
+      ? (0.49 * h.wave_height * h.wave_height * h.wave_period)
+      : (Number.isFinite(h.swell_height) && Number.isFinite(h.swell_period))
+        ? (0.49 * h.swell_height * h.swell_height * h.swell_period)
+        : null;
+  let powerTag = '';
+  if (P != null) {
+    if (P < 3) powerTag = `energia fraca (${fmtNum(P,1)} kW/m)`;
+    else if (P < 7) powerTag = `energia média (${fmtNum(P,1)} kW/m)`;
+    else if (P < 12) powerTag = `energia forte (${fmtNum(P,1)} kW/m)`;
+    else powerTag = `energia pesada (${fmtNum(P,1)} kW/m)`;
+  }
+
   // Contexto textual: sempre factual
   const bits = [];
   bits.push(`Swell ${dirCard} ${fmtNum(h.swell_height)}m ${fmtNum(h.swell_period,0)}s`);
@@ -255,6 +273,7 @@ function buildContextAdvice(h, spot) {
   if (textureTag) bits.push(textureTag);
   if (periodTag !== '—') bits.push(periodTag);
   if (!heightOK) bits.push('altura baixa');
+  if (powerTag) bits.push(powerTag);
   const context = bits.join(' · ');
 
   // Advice objetivo: destaca o fator dominante
@@ -267,6 +286,11 @@ function buildContextAdvice(h, spot) {
   else if (!periodOK) advice = 'Período curto para o pico';
   else if (textureTag === 'mar mexido') advice = 'Textura mexida pelo vento';
   else advice = 'Condições alinhadas ao pico';
+  // Nota adicional para beachbreak em mar pesado
+  if (spot?.bottomType === 'beach' && P != null && P > 12) {
+    advice = advice || '';
+    advice += (advice ? ' · ' : '') + 'Mar pesado para beachbreak raso';
+  }
 
   const flags = {
     withinWindow,

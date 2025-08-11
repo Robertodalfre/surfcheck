@@ -1,22 +1,8 @@
 import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
 import pino from 'pino';
+import app from './app.js';
 
-import spotsRouter from './routes/spots.routes.js';
-import forecastRouter from './routes/forecast.routes.js';
-
-const app = express();
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
-app.use(helmet());
-app.use(cors({ origin: true }));
-app.use(express.json());
-
-app.get('/health', (_req, res) => res.json({ ok: true }));
-app.use('/spots', spotsRouter);
-app.use('/forecast', forecastRouter);
-
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => logger.info({ PORT }, 'SurfCheck backend running'));
+app.listen(PORT, () => logger.info({ PORT }, 'SurfCheck backend running (local dev)'));

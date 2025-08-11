@@ -5,16 +5,20 @@ import SurfHeader from '../components/SurfHeader';
 import SurfStatus from '../components/SurfStatus';
 import SurfConditions from '../components/SurfConditions';
 import SurfSpotsList from '../components/SurfSpotsList';
-import { getForecastCompact, type ForecastCompact, getForecastFull, type ForecastFull } from '@/lib/api';
+import { getForecastCompact, type ForecastCompact, getForecastFull, type ForecastFull, getSpots, type SpotMeta } from '@/lib/api';
 
 type Status = 'epic' | 'good' | 'ok' | 'bad';
 
 const Index = () => {
+  const [spotId, setSpotId] = useState<string>('sape');
   const [data, setData] = useState<ForecastCompact | null>(null);
   const [full, setFull] = useState<ForecastFull | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null); // '06:00' | '09:00' | '12:00' | '15:00'
+  const [otherSpots, setOtherSpots] = useState<{ id: string; name: string; status: 'good'|'ok'|'bad'; height: string; }[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchSpots, setSearchSpots] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -22,8 +26,8 @@ const Index = () => {
       try {
         setLoading(true);
         const [res, resFull] = await Promise.all([
-          getForecastCompact('sape', 3, 72),
-          getForecastFull('sape', 3),
+          getForecastCompact(spotId, 3, 72),
+          getForecastFull(spotId, 3),
         ]);
         if (mounted) {
           setData(res);
@@ -36,7 +40,33 @@ const Index = () => {
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [spotId]);
+
+  // Carregar lista de spots do backend para preencher "Outros picos" e a busca (lupa)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await getSpots();
+        if (!mounted) return;
+        const spots = (res.spots || []) as SpotMeta[];
+        // Opções desejadas
+        const desired = ['sape', 'lagoinha', 'itamambuca'];
+        // Lista para a lupa (os 3 fixos, se existirem)
+        const sopts = spots.filter(s => desired.includes(s.id)).map(s => ({ id: s.id, name: s.name }));
+        setSearchSpots(sopts);
+        // Lista "Outros picos" (não inclui o atual)
+        const mapped = spots
+          .filter(s => desired.includes(s.id) && s.id !== spotId)
+          .filter(s => s.id !== spotId)
+          .map(s => ({ id: s.id, name: s.name, status: 'ok' as const, height: '—' }));
+        setOtherSpots(mapped);
+      } catch (e) {
+        // Silenciar erro na lista de spots
+      }
+    })();
+    return () => { mounted = false; };
+  }, [spotId]);
 
   // After 17:00, show tomorrow's forecast
   const after1700 = new Date().getHours() >= 17;
@@ -54,13 +84,27 @@ const Index = () => {
     return full.hours.filter(h => h.time.startsWith(effectiveDateKey));
   }, [full, effectiveDateKey]);
 
-  // default selection once we have day hours
+  // default selection once we have day hours (pick nearest to current time for today)
   useEffect(() => {
-    if (!dayHours.length) return;
+    if (!dayHours.length || selectedSlot) return;
     const order = ['06:00','09:00','12:00','15:00'];
-    const firstAvail = order.find(hh => dayHours.some(h => h.time.includes(`T${hh}`)));
-    if (firstAvail && !selectedSlot) setSelectedSlot(firstAvail);
-  }, [dayHours, selectedSlot]);
+    const avail = order.filter(hh => dayHours.some(h => h.time.includes(`T${hh}`)));
+    if (!avail.length) return;
+    if (after1700) {
+      // showing tomorrow: default to first available (usually 06:00)
+      setSelectedSlot(avail[0]);
+      return;
+    }
+    const nowH = new Date().getHours();
+    const toHour = (hh: string) => parseInt(hh.split(':')[0], 10);
+    let best = avail[0];
+    let bestDiff = Math.abs(toHour(best) - nowH);
+    for (const hh of avail) {
+      const diff = Math.abs(toHour(hh) - nowH);
+      if (diff < bestDiff) { best = hh; bestDiff = diff; }
+    }
+    setSelectedSlot(best);
+  }, [dayHours, selectedSlot, after1700]);
 
   const selectedHourObj = useMemo(() => {
     if (!dayHours.length) return null;
@@ -120,27 +164,36 @@ const Index = () => {
     const period = c?.swell_period ?? null;
     const windSpd = c?.wind_speed ?? null;
     const windDir = c?.wind_direction ?? null;
+    // Mostrar Força em Joules por metro quadrado (energia por área)
+    // E ≈ (1/16) * rho * g * H^2, com rho=1025 kg/m³, g=9.81 m/s² e H (onda combinada)
+    const energyJm2 = (() => {
+      const rho = 1025;
+      const g = 9.81;
+      const K = (rho * g) / 16; // ~ 628.9
+      const H = (c as any)?.wave_height as number | undefined;
+      if (Number.isFinite(H)) return K * (H as number) * (H as number);
+      const Hs = (c as any)?.swell_height as number | undefined;
+      if (Number.isFinite(Hs)) return K * (Hs as number) * (Hs as number);
+      return null;
+    })();
     return {
       waveHeight: waveHeight != null ? `${waveHeight.toFixed(1)}m` : '—',
       swellDirection: swellDir != null ? degToCardinal(swellDir) : '—',
       period: period != null ? `${period.toFixed(0)}` : '—',
       windSpeed: windSpd != null ? `${windSpd.toFixed(0)}km/h` : '—',
       windDirection: windDir != null ? degToCardinal(windDir) : '—',
+      power: energyJm2 != null ? `${Math.round(energyJm2)} J/m²` : '—',
     };
   }, [data, selectedHourObj]);
 
-  const otherSpots = [
-    { name: 'Itamambuca', status: 'good' as const, height: '—' },
-    { name: 'Félix', status: 'ok' as const, height: '—' },
-    { name: 'Vermelha do Norte', status: 'bad' as const, height: '—' },
-  ];
+  // otherSpots agora vem do backend (getSpots), filtrado acima
 
   const handleMenuClick = () => {
     console.log('Menu clicked');
   };
 
   const handleSearchClick = () => {
-    console.log('Search clicked');
+    setSearchOpen(true);
   };
 
   const handleSpotSelect = (spot: any) => {
@@ -160,29 +213,15 @@ const Index = () => {
           status={currentSpot.status}
           message={currentSpot.message}
           subtitle={currentSpot.subtitle}
+          onPrev={goPrev}
+          onNext={goNext}
+          prevEnabled={availableSlots.length > 1}
+          nextEnabled={availableSlots.length > 1}
         />
 
-        {/* Navegação por setas entre horários */}
-        <div className="px-4 mt-2 flex items-center justify-center gap-4">
-          <button
-            aria-label="Horário anterior"
-            className={`p-2 rounded-full border ${availableSlots.length>1 ? 'border-zinc-700 text-white/80 hover:bg-zinc-900' : 'border-zinc-800 text-white/40 cursor-not-allowed'}`}
-            onClick={goPrev}
-            disabled={availableSlots.length <= 1}
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div className="text-xs text-zinc-400">
-            {selectedSlot ? selectedSlot.replace(':00','h') : ''}
-          </div>
-          <button
-            aria-label="Próximo horário"
-            className={`p-2 rounded-full border ${availableSlots.length>1 ? 'border-zinc-700 text-white/80 hover:bg-zinc-900' : 'border-zinc-800 text-white/40 cursor-not-allowed'}`}
-            onClick={goNext}
-            disabled={availableSlots.length <= 1}
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+        {/* Horário selecionado (informativo) */}
+        <div className="px-4 mt-2 flex items-center justify-center text-xs text-zinc-400">
+          {selectedSlot ? `Horário: ${selectedSlot.replace(':00','h')}` : ''}
         </div>
 
         {/* Chips de horários do dia (06, 09, 12, 15) */}
@@ -227,6 +266,7 @@ const Index = () => {
           period={conditions.period}
           windSpeed={conditions.windSpeed}
           windDirection={conditions.windDirection}
+          power={conditions.power}
         />
 
         {error && (
@@ -235,8 +275,37 @@ const Index = () => {
 
         <SurfSpotsList
           spots={otherSpots}
+          initialSpotId={spotId}
           onSpotSelect={handleSpotSelect}
+          onSpotChange={(id) => {
+            setSpotId(id);
+            setSelectedSlot(null);
+          }}
         />
+
+        {/* Picker simples ativado pela lupa */}
+        {searchOpen && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            <div className="absolute inset-0 bg-black/70" onClick={() => setSearchOpen(false)} />
+            <div className="relative bg-[#0a0a0a] border border-zinc-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[80vh] overflow-y-auto p-4 m-2">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-white font-semibold">Escolher pico</div>
+                <button className="text-zinc-400 hover:text-white" onClick={() => setSearchOpen(false)}>✕</button>
+              </div>
+              <div className="space-y-2">
+                {searchSpots.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => { setSpotId(s.id); setSelectedSlot(null); setSearchOpen(false); }}
+                    className={`w-full text-left px-3 py-2 rounded-md border ${s.id===spotId ? 'border-[#00AEEF] text-white bg-zinc-900' : 'border-zinc-700 text-white/80 hover:bg-zinc-900/60'}`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

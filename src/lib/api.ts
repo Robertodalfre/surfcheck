@@ -33,6 +33,7 @@ export type ForecastCompact = {
     wind_speed: number | null;
     wind_direction: number | null;
     wave_height: number | null;
+    power_kwm?: number | null;
     reasons: string[];
     meta?: { context: string; advice: string; flags: Record<string, any> };
   } | null;
@@ -42,7 +43,7 @@ export type ForecastCompact = {
   cache: { fresh: boolean };
 };
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 export async function getForecastCompact(spotId: string, days = 3, chartHours = 72): Promise<ForecastCompact> {
   const url = `${API_URL}/forecast/${encodeURIComponent(spotId)}?days=${days}&compact=1&chartHours=${chartHours}&slots=1`;
@@ -77,6 +78,7 @@ export type ForecastFull = {
     swell_period: number | null;
     wind_speed: number | null;
     wind_direction: number | null;
+    power_kwm?: number | null;
     meta?: { context: string; advice: string; flags: Record<string, any> };
   }>;
   windows: any[];

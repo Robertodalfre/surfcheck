@@ -6,17 +6,22 @@ export function scoreHour(hour, spot) {
   const scores = {
     swellAngle: scoreSwellAngle(hour, spot),
     window: scoreWindow(hour, spot),
-    energy: scoreEnergy(hour, spot),
+    energy: 0, // placeholder, set below after computing power
     texture: scoreTexture(hour),
     wind: scoreWind(hour, spot),
     steepness: scoreSteepness(hour, spot),
   };
+  // Energia via potência da onda (kW/m) usando o mar total (onda combinada)
+  const H = hour.wave_height ?? 0;
+  const T = hour.wave_period ?? 0;
+  const power_kwm = wavePowerKwM(H, T);
+  scores.energy = energyScoreFromPower(power_kwm, spot?.bottomType);
   // base score (sem consistency/tide)
   const base = combine({ ...scores, consistency: 1, tide: 1 });
   // consistency será aplicada fora (média móvel)
   const label = toLabel(base);
   const reasons = buildReasons(hour, spot, scores, base);
-  return { scores, score: base, label, reasons };
+  return { scores, score: base, label, reasons, power_kwm };
 }
 
 export function combine(scores) {
@@ -60,15 +65,28 @@ function scoreWindow(h, s) {
   return 1;
 }
 
-function scoreEnergy(h, s) {
-  const H = h.swell_height ?? 0;
-  const T = h.swell_period ?? 0;
-  if (H <= 0 || T <= 0) return 0;
-  // Defaults por tipo
-  const ranges = byBottomType(s.bottomType);
-  const hPart = bandScore(H, ranges.H[0], ranges.H[1]);
-  const tPart = bandScore(T, ranges.T[0], ranges.T[1]);
-  return 0.6 * hPart + 0.4 * tPart;
+// Energia baseada em potência (kW/m)
+export function wavePowerKwM(H, T) {
+  if (!Number.isFinite(H) || !Number.isFinite(T) || H <= 0 || T <= 0) return 0;
+  return 0.49 * H * H * T;
+}
+
+export function energyScoreFromPower(P, bottomType) {
+  // Quebras mais rasas (beachbreak) sofrem em mares muito pesados
+  const heavyPenalty = bottomType === 'beach' && P > 12 ? 0.1 : 0.0;
+  // Mapear potência para score 0..1 com pontos de ancoragem
+  // <3 kW/m: ~0.20
+  // 3–7: 0.20–0.50
+  // 7–12: 0.50–0.80
+  // >12: ~0.95 (menos penalidade, depois aplica heavyPenalty)
+  let s;
+  if (P <= 0) s = 0;
+  else if (P < 3) s = 0.2 * (P / 3); // 0..0.2
+  else if (P < 7) s = 0.2 + (0.3 * (P - 3) / 4); // 0.2..0.5
+  else if (P < 12) s = 0.5 + (0.3 * (P - 7) / 5); // 0.5..0.8
+  else s = 0.95; // pesado
+  s = Math.max(0, s - heavyPenalty);
+  return clamp01(s);
 }
 
 function byBottomType(type) {
@@ -140,8 +158,19 @@ function buildReasons(h, s, scores, finalScore) {
   // Janela / sombra
   if (scores.window <= 0.15) r.push('fora da janela de swell ou sombreamento');
   // Energia
-  if (scores.energy >= 0.85) r.push('boa energia do swell');
-  else if (scores.energy <= 0.3) r.push('baixa energia do swell');
+  {
+    const P = Number.isFinite(h.power_kwm) ? Number(h.power_kwm) : null;
+    if (P != null) {
+      if (P < 3) r.push('baixa energia do swell');
+      else if (P < 7) r.push('energia média');
+      else if (P < 12) r.push('boa energia do swell');
+      else r.push('energia muito forte');
+    } else {
+      if (scores.energy >= 0.85) r.push('energia muito forte');
+      else if (scores.energy >= 0.6) r.push('boa energia do swell');
+      else if (scores.energy <= 0.3) r.push('baixa energia do swell');
+    }
+  }
   // Textura
   if (scores.texture <= 0.5) r.push('mar mexido/chop alto');
   else if (scores.texture >= 0.9) r.push('textura limpa');
