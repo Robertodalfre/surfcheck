@@ -66,7 +66,7 @@ const SurfConditions = ({
           <span className="text-xs text-muted-foreground">Força</span>
         </div>
 
-        {/* IA card */}
+        {/* IA card
         <button
           type="button"
           className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[150px] snap-start text-left"
@@ -78,7 +78,7 @@ const SurfConditions = ({
           <Bot className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
           <span className="text-base font-bold text-foreground">Perguntar para IA</span>
           <span className="text-xs text-muted-foreground">Dicas personalizadas</span>
-        </button>
+        </button> */}
 
         {/* Nota 0-10 com cor por "temperatura" */}
         <div className={`surf-condition-card transition-colors min-w-[150px] snap-start border ${tempColor}`}>

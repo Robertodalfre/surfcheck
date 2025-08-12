@@ -252,6 +252,15 @@ const Index = () => {
     };
   }, [data, selectedHourObj]);
 
+  // Classe visual para destacar a nota (segue o layout do SurfConditions)
+  const noteBadgeClass = useMemo(() => {
+    const lbl = (conditions.noteLabel || '').toString().toLowerCase();
+    if (lbl.includes('épico')) return 'border-blue-500 text-blue-300 bg-blue-500/15';
+    if (lbl.includes('bom') || lbl.includes('ok')) return 'border-yellow-500 text-yellow-300 bg-yellow-500/15';
+    if (lbl.includes('ruim')) return 'border-red-500 text-red-300 bg-red-500/15';
+    return 'border-zinc-700 text-white/80 bg-zinc-900/40';
+  }, [conditions.noteLabel]);
+
   // otherSpots agora vem do backend (getSpots), filtrado acima
 
   const handleMenuClick = () => {
@@ -296,7 +305,15 @@ const Index = () => {
           prevEnabled={availableSlots.length > 1}
           nextEnabled={availableSlots.length > 1}
         />
-        
+
+        {/* Nota (0–10) compacta abaixo da mensagem principal (com destaque) */}
+        <div className="px-4 mt-2 flex items-center justify-center gap-2">
+          <span className="text-[11px] text-zinc-400">Score</span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${noteBadgeClass}`}>
+            {conditions.noteScore != null ? conditions.noteScore : '—'}
+          </span>
+        </div>
+
 
         {/* Horário selecionado (informativo) */}
         {/* <div className="px-4 mt-2 flex items-center justify-center text-xs text-zinc-400">

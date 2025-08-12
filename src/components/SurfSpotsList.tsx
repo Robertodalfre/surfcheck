@@ -24,6 +24,18 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
   const [selDate, setSelDate] = useState<string | null>(null); // YYYY-MM-DD
   const [showDetails, setShowDetails] = useState(false);
   const fetchLockRef = useRef(false);
+  // Horários excluídos por dia: { 'YYYY-MM-DD': { 'YYYY-MM-DDTHH:MM': true } }
+  const [excluded, setExcluded] = useState<Record<string, Record<string, true>>>({});
+
+  // Sincronizar pico interno quando o topo (parent) muda via lupa
+  useEffect(() => {
+    if (!initialSpotId) return;
+    setLoading(true);
+    setSpotId(initialSpotId);
+    setSelDate(null);
+    setExcluded({});
+    // o efeito de fetch abaixo reagirá a spotId e vai buscar novamente
+  }, [initialSpotId]);
 
   useEffect(() => {
     let mounted = true;
@@ -152,6 +164,9 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
     const base = modalTimes
       .map(t => dayHours.find(h => h.time.includes(`T${t}`)))
       .filter(Boolean) as ForecastFull['hours'];
+    // Remover horários excluídos para o dia selecionado
+    const ex = excluded[selDate ?? ''] || {};
+    const filtered = base.filter(h => !ex[h.time]);
     // Hide past slots only if selected day is today
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -160,14 +175,38 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
     const todayKey = `${yyyy}-${mm}-${dd}`;
     if (selDate === todayKey) {
       const nowMin = now.getHours() * 60 + now.getMinutes();
-      return base.filter(h => {
+      return filtered.filter(h => {
         const d = new Date(h.time);
         const mins = d.getHours() * 60 + d.getMinutes();
         return mins >= nowMin;
       });
     }
-    return base;
-  }, [dayHours]);
+    return filtered;
+  }, [dayHours, excluded, selDate]);
+
+  const excludedCount = useMemo(() => Object.keys(excluded[selDate ?? ''] || {}).length, [excluded, selDate]);
+
+  const toggleExclude = (timeIso: string) => {
+    const day = timeIso.slice(0,10);
+    setExcluded(prev => {
+      const dayMap = { ...(prev[day] || {}) } as Record<string, true>;
+      if (dayMap[timeIso]) {
+        delete dayMap[timeIso];
+      } else {
+        dayMap[timeIso] = true as const;
+      }
+      return { ...prev, [day]: dayMap };
+    });
+  };
+  const resetDayExclusions = (day: string | null) => {
+    if (!day) return;
+    setExcluded(prev => {
+      if (!prev[day]) return prev;
+      const cp = { ...prev } as Record<string, Record<string, true>>;
+      delete cp[day];
+      return cp;
+    });
+  };
 
   const topHours = useMemo(() => {
     if (!detailHours.length) return [] as ForecastFull['hours'];
@@ -447,7 +486,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
         <div className="absolute inset-0 bg-black/70" onClick={closeDetails} />
         <div className="relative bg-[#0a0a0a] border border-zinc-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-white font-semibold">Detalhes do dia {selDate}</div>
+            <div className="text-white font-semibold">Detalhes do dia {selDate} • {full?.spot?.name}</div>
             <button className="text-zinc-400 hover:text-white" onClick={closeDetails}>✕</button>
           </div>
 
@@ -500,7 +539,17 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
 
           {/* Horas do dia */}
           <div>
-            <div className="text-white font-medium mb-2">Horas</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-white font-medium">Horas</div>
+              {excludedCount > 0 && (
+                <button
+                  onClick={() => resetDayExclusions(selDate)}
+                  className="text-[11px] px-2 py-0.5 rounded-md border border-zinc-600 text-zinc-200 hover:bg-zinc-800"
+                >
+                  Restaurar horários ({excludedCount})
+                </button>
+              )}
+            </div>
             <div className="mb-2 flex flex-wrap gap-2 text-[11px]">
               <span className="px-2 py-0.5 rounded-full border border-yellow-400 text-yellow-400">1º melhor</span>
               <span className="px-2 py-0.5 rounded-full border border-[#00AEEF] text-[#00AEEF]">2º melhor</span>
@@ -527,6 +576,14 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
                     {badge && (
                       <span className={`absolute -top-2 -right-2 text-[10px] px-2 py-0.5 rounded-full border bg-zinc-900 ${badge.cls}`}>{badge.label}</span>
                     )}
+                    {/* Botão de excluir horário */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleExclude(h.time); }}
+                      className="absolute -top-2 -left-2 text-[10px] px-2 py-0.5 rounded-full border border-red-400 text-red-300 bg-zinc-900 hover:bg-zinc-800"
+                      title="Excluir horário"
+                    >
+                      Excluir
+                    </button>
                   <div className="flex items-center justify-between text-sm">
                     <div className="text-white font-semibold">{fmtTime(h.time)}</div>
                     <div className="text-zinc-300">
