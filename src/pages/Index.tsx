@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import SurfHeader from '../components/SurfHeader';
 import SurfStatus from '../components/SurfStatus';
@@ -22,6 +22,8 @@ const Index = () => {
   // PWA install (beforeinstallprompt)
   const [installPromptEvent, setInstallPromptEvent] = useState<any | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
+  // Guard contra fetch duplicado em StrictMode
+  const fetchLockRef = useRef(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -71,10 +73,12 @@ const Index = () => {
     let mounted = true;
     (async () => {
       try {
+        if (fetchLockRef.current) return; // evitar duplicação em StrictMode
+        fetchLockRef.current = true;
         setLoading(true);
         const [res, resFull] = await Promise.all([
-          getForecastCompact(spotId, 3, 72),
-          getForecastFull(spotId, 3),
+          getForecastCompact(spotId, 5, 120),
+          getForecastFull(spotId, 5),
         ]);
         if (mounted) {
           setData(res);
@@ -84,6 +88,7 @@ const Index = () => {
         if (mounted) setError(String(e?.message || e));
       } finally {
         if (mounted) setLoading(false);
+        fetchLockRef.current = false;
       }
     })();
     return () => { mounted = false; };
@@ -206,6 +211,7 @@ const Index = () => {
 
   const conditions = useMemo(() => {
     const c = selectedHourObj ?? data?.current;
+    const label = (selectedHourObj?.label ?? data?.current?.label ?? '').toString();
     const waveHeight = c?.wave_height ?? null;
     const swellDir = c?.swell_direction ?? null;
     const period = c?.swell_period ?? null;
@@ -223,6 +229,17 @@ const Index = () => {
       if (Number.isFinite(Hs)) return K * (Hs as number) * (Hs as number);
       return null;
     })();
+    // score opcional vindo do backend em meta.flags.score; fallback por label
+    const backendScore = (c as any)?.meta?.flags?.score;
+    const fallbackScore = (() => {
+      const l = label.toLowerCase();
+      if (l.includes('épico')) return 9.5;
+      if (l.includes('bom')) return 7.5;
+      if (l.includes('ok')) return 5.5;
+      if (l.includes('ruim')) return 2.5;
+      return null;
+    })();
+    const score = Number.isFinite(backendScore) ? backendScore : fallbackScore;
     return {
       waveHeight: waveHeight != null ? `${waveHeight.toFixed(1)}m` : '—',
       swellDirection: swellDir != null ? degToCardinal(swellDir) : '—',
@@ -230,6 +247,8 @@ const Index = () => {
       windSpeed: windSpd != null ? `${windSpd.toFixed(0)}km/h` : '—',
       windDirection: windDir != null ? degToCardinal(windDir) : '—',
       power: energyJm2 != null ? `${Math.round(energyJm2)} J/m²` : '—',
+      noteScore: score != null ? Math.max(0, Math.min(10, Number(score))).toFixed(1) : null,
+      noteLabel: label,
     };
   }, [data, selectedHourObj]);
 
@@ -327,6 +346,8 @@ const Index = () => {
           windSpeed={conditions.windSpeed}
           windDirection={conditions.windDirection}
           power={conditions.power}
+          noteScore={conditions.noteScore as any}
+          noteLabel={conditions.noteLabel as any}
         />
 
         {error && (

@@ -43,33 +43,52 @@ export async function fetchMarineForecast({ lat, lon, days = 3 }) {
 
   const marineUrl = `${MARINE_BASE}?${marineParams.toString()}`;
   const weatherUrl = `${WEATHER_BASE}?${weatherParams.toString()}`;
-  logger.info({ marineUrl, weatherUrl }, 'Fetching Open-Meteo Marine & Weather');
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  try {
-    const [marineRes, weatherRes] = await Promise.all([
-      fetch(marineUrl, { signal: controller.signal }),
-      fetch(weatherUrl, { signal: controller.signal }),
-    ]);
+  // até 2 tentativas com backoff exponencial
+  const maxAttempts = 2;
+  const baseDelayMs = 600;
+  const timeoutMs = 20000;
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    logger.info({ marineUrl, weatherUrl, attempt }, 'Fetching Open-Meteo Marine & Weather');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const [marineRes, weatherRes] = await Promise.all([
+        fetch(marineUrl, { signal: controller.signal }),
+        fetch(weatherUrl, { signal: controller.signal }),
+      ]);
 
-    if (!marineRes.ok) {
-      const text = await marineRes.text().catch(() => '');
-      logger.error({ status: marineRes.status, text }, 'Marine API error');
-      throw new Error(`Marine error ${marineRes.status}: ${text}`);
+      if (!marineRes.ok) {
+        const text = await marineRes.text().catch(() => '');
+        logger.error({ status: marineRes.status, text, attempt }, 'Marine API error');
+        throw new Error(`Marine error ${marineRes.status}: ${text}`);
+      }
+      if (!weatherRes.ok) {
+        const text = await weatherRes.text().catch(() => '');
+        logger.error({ status: weatherRes.status, text, attempt }, 'Weather API error');
+        throw new Error(`Weather error ${weatherRes.status}: ${text}`);
+      }
+
+      const marine = await marineRes.json();
+      const weather = await weatherRes.json();
+      return mergeHourly(marine, weather);
+    } catch (err) {
+      lastErr = err;
+      logger.error({ err: String(err), attempt }, 'forecast error');
+      if (attempt < maxAttempts) {
+        // backoff exponencial simples
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        await new Promise(res => setTimeout(res, delay));
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-    if (!weatherRes.ok) {
-      const text = await weatherRes.text().catch(() => '');
-      logger.error({ status: weatherRes.status, text }, 'Weather API error');
-      throw new Error(`Weather error ${weatherRes.status}: ${text}`);
-    }
-
-    const marine = await marineRes.json();
-    const weather = await weatherRes.json();
-    return mergeHourly(marine, weather);
-  } finally {
-    clearTimeout(timeout);
   }
+  // fallback (não deveria chegar aqui)
+  throw lastErr || new Error('Unknown forecast fetch error');
 }
 
 function mergeHourly(marine, weather) {

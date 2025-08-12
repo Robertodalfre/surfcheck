@@ -1,6 +1,6 @@
 
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getForecastFull, type ForecastFull } from '@/lib/api';
 
 interface SurfSpot {
@@ -23,11 +23,14 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
   const [loading, setLoading] = useState(false);
   const [selDate, setSelDate] = useState<string | null>(null); // YYYY-MM-DD
   const [showDetails, setShowDetails] = useState(false);
+  const fetchLockRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        if (fetchLockRef.current) return; // evitar duplicação em StrictMode
+        fetchLockRef.current = true;
         setLoading(true);
         const data = await getForecastFull(spotId, 5);
         if (!mounted) return;
@@ -39,6 +42,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
         setSelDate(tomorrow);
       } finally {
         if (mounted) setLoading(false);
+        fetchLockRef.current = false;
       }
     })();
     return () => { mounted = false; };
@@ -47,6 +51,32 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
   const saoPauloDate = (iso: string) => {
     // Assume API times already in America/Sao_Paulo ISO local (no Z). Use as-is.
     return new Date(iso);
+  };
+
+  // Controlar modal por rota hash (#dialog)
+  useEffect(() => {
+    const syncFromHash = () => setShowDetails(window.location.hash === '#dialog');
+    // estado inicial
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, []);
+
+  const openDetails = () => {
+    if (!dayHours.length) return;
+    if (window.location.hash !== '#dialog') {
+      window.location.hash = '#dialog';
+    } else {
+      setShowDetails(true);
+    }
+  };
+  const closeDetails = () => {
+    if (window.location.hash === '#dialog') {
+      // voltar na pilha para remover o hash sem sair do app
+      history.back();
+    } else {
+      setShowDetails(false);
+    }
   };
 
   const cardinal = (deg?: number | null) => {
@@ -196,6 +226,37 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
     }
   };
 
+  // Swipe handlers (trocar dia)
+  const touchStartX = useRef<number | null>(null);
+  const handleTouchStart: React.TouchEventHandler<HTMLDivElement> = (e) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd: React.TouchEventHandler<HTMLDivElement> = (e) => {
+    if (touchStartX.current == null || !days.length) return;
+    const dx = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+    const threshold = 50; // px
+    const idx = days.findIndex(d => d.key === selDate);
+    const nextIdx = (idx + 1) % days.length;
+    const prevIdx = (idx - 1 + days.length) % days.length;
+    if (dx <= -threshold) {
+      setSelDate(days[nextIdx].key);
+    } else if (dx >= threshold) {
+      setSelDate(days[prevIdx].key);
+    }
+    touchStartX.current = null;
+  };
+
+  // Dias visíveis na coluna esquerda: alinhados ao dia selecionado
+  const visibleSideDays = useMemo(() => {
+    if (!days.length) return [] as typeof days;
+    const idx = days.findIndex(d => d.key === selDate);
+    if (idx === -1) return days.slice(0, 2);
+    if (idx < days.length - 1) return [days[idx], days[idx + 1]];
+    // Último dia selecionado: mostra anterior e atual
+    if (idx > 0) return [days[idx - 1], days[idx]];
+    return [days[idx]];
+  }, [days, selDate]);
+
   return (
     <>
     <div className="px-4 pb-8">
@@ -208,15 +269,31 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
         </div>
       </div>
 
-      {/* Bloco principal de previsão */}
-      <div className="border-4 border-[#00AEEF] rounded-md p-3">
+      {/* Bloco principal de previsão (clicável + swipe) */}
+      <div
+        className="border-4 border-[#00AEEF] rounded-md p-3 cursor-pointer select-none"
+        onClick={openDetails}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <div className="flex gap-3 items-start">
           {/* Barra lateral de dias */}
           <div className="w-20 flex flex-col gap-3 shrink-0">
-            {days.slice(0,2).map((it) => (
+            {loading ? (
+              <>
+                <div className="px-2 py-3 border-4 border-[#00AEEF]/40 rounded-sm opacity-70 animate-pulse">
+                  <div className="h-3 w-10 bg-zinc-800 rounded mb-2" />
+                  <div className="h-6 w-8 bg-zinc-800 rounded" />
+                </div>
+                <div className="px-2 py-3 border-4 border-[#00AEEF]/30 rounded-sm opacity-60 animate-pulse">
+                  <div className="h-3 w-9 bg-zinc-800 rounded mb-2" />
+                  <div className="h-6 w-7 bg-zinc-800 rounded" />
+                </div>
+              </>
+            ) : visibleSideDays.map((it) => (
               <button
                 key={it.key}
-                onClick={() => setSelDate(it.key)}
+                onClick={(e) => { e.stopPropagation(); setSelDate(it.key); }}
                 className={`px-2 py-3 text-center border-4 rounded-sm ${selDate===it.key ? 'border-[#00AEEF]' : 'border-[#00AEEF]/60 opacity-80'}`}
               >
                 <div className="text-[#00AEEF] text-sm font-semibold lowercase">{it.dow}</div>
@@ -231,27 +308,28 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
               {/* Esquerda: onda */}
               <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-4 border-[#00AEEF] mx-auto sm:mx-0">
-                <div className="text-center">
-                  <div className="text-white text-3xl font-bold leading-tight">{loading ? '...' : `${fmt(selectedHour?.wave_height)} m`}</div>
-                  <div className="text-[#00AEEF] text-sm font-semibold">{loading ? '' : fmt(selectedHour?.swell_height)}</div>
-                </div>
+                {loading ? (
+                  <div className="w-20 h-12 bg-zinc-800 rounded animate-pulse" />
+                ) : (
+                  <div className="text-center">
+                    <div className="text-white text-3xl font-bold leading-tight">{`${fmt(selectedHour?.wave_height)} m`}</div>
+                    <div className="text-[#00AEEF] text-sm font-semibold">{fmt(selectedHour?.swell_height)}</div>
+                  </div>
+                )}
               </div>
-              {/* Direita: clima e botão empilhados */}
+              {/* Direita: clima + botão de detalhes (abre via rota #dialog) */}
               <div className="flex flex-col gap-2 sm:items-end w-full">
                 <div className="flex items-center gap-2 text-white self-center sm:self-end">
-                  <svg viewBox="0 0 24 24" className="w-9 h-9 stroke-white" fill="none" strokeWidth="1.5">
-                    <path d="M3 15a4 4 0 0 0 4 4h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5-2"/>
-                  </svg>
-                  <span className="text-white text-lg font-bold">29°</span>
-                </div>
-                <div className="w-full flex justify-center sm:justify-end">
-                  <button
-                    disabled={!dayHours.length}
-                    onClick={() => setShowDetails(true)}
-                    className={`px-3 py-1.5 text-xs rounded-full border ${dayHours.length ? 'border-[#00AEEF] text-[#00AEEF] hover:bg-zinc-900/50' : 'border-zinc-700 text-zinc-500 cursor-not-allowed'}`}
-                  >
-                    Detalhes do dia
-                  </button>
+                  {loading ? (
+                    <div className="h-7 w-24 bg-zinc-800 rounded animate-pulse" />
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" className="w-9 h-9 stroke-white" fill="none" strokeWidth="1.5">
+                        <path d="M3 15a4 4 0 0 0 4 4h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5-2"/>
+                      </svg>
+                      <span className="text-white text-lg font-bold">29°</span>
+                    </>
+                  )}
                 </div>
                 {/* <div className="text-xs text-zinc-400 leading-tight text-right mt-1 w-full">{loading ? '' : `Horário: ${fmtTime(selectedHour?.time)}`}</div> */}
               </div>
@@ -259,14 +337,29 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
 
             {/* Bottom: swell dir + período, vento + velocidade */}
             <div className="flex items-end gap-8">
-              <div className="flex flex-col items-center">
-                <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{loading ? '·' : cardinal(selectedHour?.swell_direction)}</div>
-                <div className="text-[#00AEEF] text-base font-semibold mt-2 leading-none">{loading ? '·' : `${fmt(selectedHour?.swell_period, 0)} s`}</div>
-              </div>
-              <div className="flex flex-col items-center">
-                <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{loading ? '·' : cardinal(selectedHour?.wind_direction)}</div>
-                <div className="text-white text-base font-medium mt-2 leading-none">{loading ? '·' : `${fmt(selectedHour?.wind_speed, 0)} km/h`}</div>
-              </div>
+              {loading ? (
+                <>
+                  <div className="flex flex-col items-center">
+                    <div className="w-16 h-16 rounded-full border-4 border-[#00AEEF]/40 bg-zinc-800/60 animate-pulse" />
+                    <div className="h-4 w-14 bg-zinc-800 rounded mt-2 animate-pulse" />
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <div className="w-16 h-16 rounded-full border-4 border-[#00AEEF]/30 bg-zinc-800/50 animate-pulse" />
+                    <div className="h-4 w-20 bg-zinc-800 rounded mt-2 animate-pulse" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center">
+                    <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{cardinal(selectedHour?.swell_direction)}</div>
+                    <div className="text-[#00AEEF] text-base font-semibold mt-2 leading-none">{`${fmt(selectedHour?.swell_period, 0)} s`}</div>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{cardinal(selectedHour?.wind_direction)}</div>
+                    <div className="text-white text-base font-medium mt-2 leading-none">{`${fmt(selectedHour?.wind_speed, 0)} km/h`}</div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -301,18 +394,25 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
       </div>
 
 
-      {/* Seleção de dias (rolável) */}
+      {/* Seleção de dias (rolável) - cliques não abrem detalhes */}
       <div className="mt-5 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-        {days.map((it) => (
-          <button
-            key={it.key}
-            onClick={() => setSelDate(it.key)}
-            className={`min-w-[70px] text-center border-4 rounded-sm px-3 py-3 ${selDate===it.key ? 'border-[#00AEEF]' : 'border-[#00AEEF]/60'}`}
-          >
-            <div className="text-[#00AEEF] text-sm font-semibold lowercase">{it.dow}</div>
-            <div className="text-white text-xl font-bold leading-none">{it.day}</div>
-          </button>
-        ))}
+        {loading
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="min-w-[70px] text-center border-4 border-[#00AEEF]/30 rounded-sm px-3 py-3 animate-pulse">
+                <div className="h-3 w-12 bg-zinc-800 rounded mb-2" />
+                <div className="h-6 w-8 bg-zinc-800 rounded" />
+              </div>
+            ))
+          : days.map((it) => (
+              <button
+                key={it.key}
+                onClick={(e) => { e.stopPropagation(); setSelDate(it.key); }}
+                className={`min-w-[70px] text-center border-4 rounded-sm px-3 py-3 ${selDate===it.key ? 'border-[#00AEEF]' : 'border-[#00AEEF]/60'}`}
+              >
+                <div className="text-[#00AEEF] text-sm font-semibold lowercase">{it.dow}</div>
+                <div className="text-white text-xl font-bold leading-none">{it.day}</div>
+              </button>
+            ))}
       </div>
       {/* Outros Picos */}
       <h3 className="text-sm font-semibold text-muted-foreground mb-2 px-1">
@@ -323,6 +423,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
           <button
             key={spot.id}
             onClick={() => {
+              setLoading(true); // mostrar skeleton imediatamente ao trocar de pico
               setSpotId(spot.id);
               setSelDate(null);
               onSpotSelect?.(spot);
@@ -343,11 +444,11 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
     </div>
     {showDetails && (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-        <div className="absolute inset-0 bg-black/70" onClick={() => setShowDetails(false)} />
+        <div className="absolute inset-0 bg-black/70" onClick={closeDetails} />
         <div className="relative bg-[#0a0a0a] border border-zinc-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="text-white font-semibold">Detalhes do dia {selDate}</div>
-            <button className="text-zinc-400 hover:text-white" onClick={() => setShowDetails(false)}>✕</button>
+            <button className="text-zinc-400 hover:text-white" onClick={closeDetails}>✕</button>
           </div>
 
           {/* Resumo do dia */}
