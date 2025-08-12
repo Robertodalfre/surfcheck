@@ -230,7 +230,15 @@ const Index = () => {
       return null;
     })();
     // score opcional vindo do backend em meta.flags.score; fallback por label
-    const backendScore = (c as any)?.meta?.flags?.score;
+    // Preferir score do backend em escala 0..10
+    const backendScore10 = (() => {
+      const flags = (c as any)?.meta?.flags;
+      const s10 = flags?.score10;
+      if (Number.isFinite(s10)) return Number(s10);
+      const s100 = flags?.score;
+      if (Number.isFinite(s100)) return Number(s100) / 10; // converter 0..100 -> 0..10
+      return null;
+    })();
     const fallbackScore = (() => {
       const l = label.toLowerCase();
       if (l.includes('épico')) return 9.5;
@@ -239,7 +247,7 @@ const Index = () => {
       if (l.includes('ruim')) return 2.5;
       return null;
     })();
-    const score = Number.isFinite(backendScore) ? backendScore : fallbackScore;
+    const score10 = Number.isFinite(backendScore10) ? backendScore10 : fallbackScore;
     return {
       waveHeight: waveHeight != null ? `${waveHeight.toFixed(1)}m` : '—',
       swellDirection: swellDir != null ? degToCardinal(swellDir) : '—',
@@ -247,7 +255,7 @@ const Index = () => {
       windSpeed: windSpd != null ? `${windSpd.toFixed(0)}km/h` : '—',
       windDirection: windDir != null ? degToCardinal(windDir) : '—',
       power: energyJm2 != null ? `${Math.round(energyJm2)} J/m²` : '—',
-      noteScore: score != null ? Math.max(0, Math.min(10, Number(score))).toFixed(1) : null,
+      noteScore: score10 != null ? Math.max(0, Math.min(10, Number(score10))).toFixed(1) : null,
       noteLabel: label,
     };
   }, [data, selectedHourObj]);

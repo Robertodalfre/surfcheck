@@ -301,6 +301,10 @@ function buildContextAdvice(h, spot) {
     windTooStrongOff,
     windTooStrongOn,
     textureTag,
+    // Compatibilidade com frontend: expor score também em flags
+    score: Number.isFinite(h.score) ? Number(h.score) : null,        // 0..100
+    score10: Number.isFinite(h.score) ? Number(h.score) / 10 : null, // 0..10
+    label: h.label,
   };
 
   return { context, advice, flags };

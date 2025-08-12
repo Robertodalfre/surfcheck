@@ -26,6 +26,10 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
   const fetchLockRef = useRef(false);
   // Horários excluídos por dia: { 'YYYY-MM-DD': { 'YYYY-MM-DDTHH:MM': true } }
   const [excluded, setExcluded] = useState<Record<string, Record<string, true>>>({});
+  // Swipe-to-delete state for hour cards
+  const swipeStartXRef = useRef<number | null>(null);
+  const [swipingKey, setSwipingKey] = useState<string | null>(null);
+  const [swipingDelta, setSwipingDelta] = useState<number>(0);
 
   // Sincronizar pico interno quando o topo (parent) muda via lupa
   useEffect(() => {
@@ -571,21 +575,65 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
                   : null;
                 const P = (h as any).power_kwm
                   ?? wavePower(h.swell_height, h.swell_period);
+                const flags = (h as any)?.meta?.flags || {};
+                const score10 = Number.isFinite(flags.score10) ? Number(flags.score10)
+                  : (Number.isFinite(flags.score) ? Number(flags.score) / 10 : null);
+                const lstr = String((h as any)?.label || flags.label || '').toLowerCase();
+                const noteBadgeClass = lstr.includes('épico')
+                  ? 'border-blue-500 text-blue-300 bg-blue-500/15'
+                  : (lstr.includes('bom') || lstr.includes('ok'))
+                    ? 'border-yellow-500 text-yellow-300 bg-yellow-500/15'
+                    : lstr.includes('ruim')
+                      ? 'border-red-500 text-red-300 bg-red-500/15'
+                      : 'border-zinc-700 text-white/80 bg-zinc-900/40';
+                const isSwiping = swipingKey === h.time;
+                const translateX = isSwiping ? Math.min(0, swipingDelta) : 0;
+                const styleTransform = { transform: `translateX(${translateX}px)` } as React.CSSProperties;
                 return (
-                  <div key={h.time} className={`relative rounded-md p-2 border ${cls}`}>
+                  <div
+                    key={h.time}
+                    className={`relative rounded-md p-2 border ${cls}`}
+                    style={styleTransform}
+                    onTouchStart={(e) => {
+                      swipeStartXRef.current = e.touches[0]?.clientX ?? null;
+                      setSwipingKey(h.time);
+                      setSwipingDelta(0);
+                    }}
+                    onTouchMove={(e) => {
+                      if (swipingKey !== h.time || swipeStartXRef.current == null) return;
+                      const x = e.touches[0]?.clientX ?? swipeStartXRef.current;
+                      setSwipingDelta(x - swipeStartXRef.current);
+                    }}
+                    onTouchEnd={() => {
+                      if (swipingKey === h.time) {
+                        if (swipingDelta < -60) {
+                          // swipe left beyond threshold => delete
+                          toggleExclude(h.time);
+                        }
+                      }
+                      setSwipingKey(null);
+                      setSwipingDelta(0);
+                      swipeStartXRef.current = null;
+                    }}
+                  >
                     {badge && (
-                      <span className={`absolute -top-2 -right-2 text-[10px] px-2 py-0.5 rounded-full border bg-zinc-900 ${badge.cls}`}>{badge.label}</span>
+                      <span className={`absolute -top-2 right-2 text-[10px] px-2 py-0.5 rounded-full border bg-zinc-900 ${badge.cls}`}>{badge.label}</span>
                     )}
                     {/* Botão de excluir horário */}
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleExclude(h.time); }}
-                      className="absolute -top-2 -left-2 text-[10px] px-2 py-0.5 rounded-full border border-red-400 text-red-300 bg-zinc-900 hover:bg-zinc-800"
+                      className="absolute top-3/4 -translate-y-1/2 right-2 text-[12px] px-2.5 py-1 rounded-full border border-red-400 text-red-300 bg-zinc-900 hover:bg-zinc-800"
                       title="Excluir horário"
                     >
-                      Excluir
+                      🗑️
                     </button>
                   <div className="flex items-center justify-between text-sm">
-                    <div className="text-white font-semibold">{fmtTime(h.time)}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-white font-semibold">{fmtTime(h.time)}</div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${noteBadgeClass}`}>
+                        {score10 != null ? (Number(score10).toFixed(1)) : '—'}
+                      </span>
+                    </div>
                     <div className="text-zinc-300">
                       {fmt(h.wave_height)} m · {cardinal(h.swell_direction)} · {fmt(h.swell_period,0)}s · {cardinal(h.wind_direction)} {fmt(h.wind_speed,0)}km/h
                       {Number.isFinite(P as number) ? ` · ${fmt(P as number,1)} kW/m` : ''}
