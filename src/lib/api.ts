@@ -43,26 +43,35 @@ export type ForecastCompact = {
   cache: { fresh: boolean };
 };
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// Define URL base da API com fallback inteligente
+// - Se VITE_API_URL estiver definida e não vazia, usa-a
+// - Caso contrário, em produção usa same-origin (Hosting com rewrites)
+// - Em desenvolvimento usa http://localhost:4000
+const envUrl = (import.meta.env.VITE_API_URL ?? '').toString().trim();
+const API_URL = envUrl || (import.meta.env.PROD ? window.location.origin : 'http://localhost:4000');
 
-export async function getForecastCompact(spotId: string, days = 3, chartHours = 72): Promise<ForecastCompact> {
-  const url = `${API_URL}/forecast/${encodeURIComponent(spotId)}?days=${days}&compact=1&chartHours=${chartHours}&slots=1`;
+async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
+  const contentType = res.headers.get('content-type') || '';
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Forecast error ${res.status}: ${text}`);
+    throw new Error(`HTTP ${res.status} at ${url}: ${text}`);
+  }
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const text = await res.text();
+    throw new Error(`Resposta não-JSON de ${url}. Content-Type: ${contentType}. Trecho: ${text.slice(0, 120)}...`);
   }
   return res.json();
 }
 
+export async function getForecastCompact(spotId: string, days = 3, chartHours = 72): Promise<ForecastCompact> {
+  const url = `${API_URL}/forecast/${encodeURIComponent(spotId)}?days=${days}&compact=1&chartHours=${chartHours}&slots=1`;
+  return fetchJson<ForecastCompact>(url);
+}
+
 export async function getSpots(): Promise<{ spots: SpotMeta[] }> {
   const url = `${API_URL}/spots`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Spots error ${res.status}: ${text}`);
-  }
-  return res.json();
+  return fetchJson<{ spots: SpotMeta[] }>(url);
 }
 
 // Full forecast (non-compact) to access hourly metrics
@@ -87,10 +96,5 @@ export type ForecastFull = {
 
 export async function getForecastFull(spotId: string, days = 5): Promise<ForecastFull> {
   const url = `${API_URL}/forecast/${encodeURIComponent(spotId)}?days=${days}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Forecast error ${res.status}: ${text}`);
-  }
-  return res.json();
+  return fetchJson<ForecastFull>(url);
 }
