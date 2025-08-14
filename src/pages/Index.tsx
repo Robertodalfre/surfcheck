@@ -269,6 +269,15 @@ const Index = () => {
     return 'border-zinc-700 text-white/80 bg-zinc-900/40';
   }, [conditions.noteLabel]);
 
+  // Status visual derivado do label atual para sincronizar cores no SurfSpotsList
+  const accentStatus = useMemo(() => {
+    const lbl = (conditions.noteLabel || '').toString().toLowerCase();
+    if (lbl.includes('épico')) return 'epic' as const;
+    if (lbl.includes('ruim')) return 'bad' as const;
+    if (lbl.includes('bom')) return 'good' as const;
+    return 'ok' as const;
+  }, [conditions.noteLabel]);
+
   // otherSpots agora vem do backend (getSpots), filtrado acima
 
   const handleMenuClick = () => {
@@ -312,12 +321,15 @@ const Index = () => {
           onNext={goNext}
           prevEnabled={availableSlots.length > 1}
           nextEnabled={availableSlots.length > 1}
+          onOpenDetails={() => { if (window.location.hash !== '#dialog') window.location.hash = '#dialog'; }}
         />
 
-        {/* Nota (0–10) compacta abaixo da mensagem principal (com destaque) */}
-        <div className="px-4 mt-2 flex items-center justify-center gap-2">
-          <span className="text-[11px] text-zinc-400">Score</span>
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${noteBadgeClass}`}>
+        {/* Nota (0–10) destacada abaixo da mensagem principal */}
+        <div className="px-4 mt-3 flex items-center justify-center gap-3">
+          <span className="text-sm md:text-base font-semibold text-zinc-200 tracking-wide">Score</span>
+          <span
+            className={`text-sm md:text-lg font-extrabold px-3 md:px-4 py-1 rounded-full border-2 shadow-sm ${noteBadgeClass}`}
+          >
             {conditions.noteScore != null ? conditions.noteScore : '—'}
           </span>
         </div>
@@ -351,6 +363,7 @@ const Index = () => {
         </div>
 
         {/* Contexto e dica do slot (meta) */}
+        {/*
         <div className="px-4 mt-2">
           {selectedHourObj?.meta?.context && (
             <div className="text-xs text-zinc-300 leading-snug text-center">
@@ -363,6 +376,7 @@ const Index = () => {
             </div>
           )}
         </div>
+        */}
 
         <SurfConditions
           waveHeight={conditions.waveHeight}
@@ -387,6 +401,7 @@ const Index = () => {
             setSpotId(id);
             setSelectedSlot(null);
           }}
+          accentStatus={accentStatus}
         />
 
         {/* Picker simples ativado pela lupa */}

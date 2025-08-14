@@ -25,18 +25,33 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen px-4 py-8">
-      <div className="max-w-md mx-auto bg-white dark:bg-neutral-900 rounded-xl shadow-sm p-6">
+      <div className="max-w-md mx-auto bg-neutral-900 rounded-xl shadow-sm p-6">
         <div className="flex flex-col items-center text-center">
-          <Avatar className="h-16 w-16 mb-3">
+          <Avatar className="h-16 w-16 mb-3 ring-1 ring-zinc-700/70">
             <AvatarImage src={user.photoURL || ""} alt={user.displayName || "Usuário"} />
             <AvatarFallback className="bg-ocean-primary/10 text-ocean-primary">
               {getUserInitials(user.displayName)}
             </AvatarFallback>
           </Avatar>
-          <h1 className="text-lg font-semibold">{user.displayName || "Usuário"}</h1>
+          <h1 className="text-lg font-semibold text-zinc-100">{user.displayName || "Usuário"}</h1>
           {user.email && (
-            <p className="text-sm text-muted-foreground">{user.email}</p>
+            <p className="text-sm text-zinc-400">{user.email}</p>
           )}
+        </div>
+
+        {/* Bloco de informações rotuladas */}
+        <div className="mt-6 rounded-md border border-zinc-700/80 bg-zinc-900 shadow-sm">
+          <div className="px-4 py-3 border-b border-zinc-800 text-[11px] uppercase tracking-wide text-zinc-300">Informações do usuário</div>
+          <div className="divide-y divide-zinc-800">
+            <div className="px-4 py-3 grid grid-cols-12 gap-x-4 gap-y-1">
+              <div className="col-span-4 text-[11px] uppercase tracking-wide text-zinc-400">Nome</div>
+              <div className="col-span-8 text-sm md:text-base font-semibold text-zinc-100 break-words">{user.displayName || "—"}</div>
+            </div>
+            <div className="px-4 py-3 grid grid-cols-12 gap-x-4 gap-y-1">
+              <div className="col-span-4 text-[11px] uppercase tracking-wide text-zinc-400">Email</div>
+              <div className="col-span-8 text-sm md:text-base text-zinc-200 break-words">{user.email || "—"}</div>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 space-y-3">

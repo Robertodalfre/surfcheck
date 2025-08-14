@@ -9,9 +9,10 @@ interface SurfStatusProps {
   onNext?: () => void;
   prevEnabled?: boolean;
   nextEnabled?: boolean;
+  onOpenDetails?: () => void;
 }
 
-const SurfStatus = ({ status, message, subtitle, onPrev, onNext, prevEnabled = false, nextEnabled = false }: SurfStatusProps) => {
+const SurfStatus = ({ status, message, subtitle, onPrev, onNext, prevEnabled = false, nextEnabled = false, onOpenDetails }: SurfStatusProps) => {
   // Swipe handling (mobile)
   const touchStartX = useRef<number | null>(null);
   const handleTouchStart: React.TouchEventHandler<HTMLDivElement> = (e) => {
@@ -92,7 +93,7 @@ const SurfStatus = ({ status, message, subtitle, onPrev, onNext, prevEnabled = f
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h1 className={getStatusClass()}>
+        <h1 className={getStatusClass()} onClick={() => onOpenDetails?.()}>
           {message}
         </h1>
         <button
@@ -107,10 +108,10 @@ const SurfStatus = ({ status, message, subtitle, onPrev, onNext, prevEnabled = f
 
       {/* Message centered on mobile too */}
       <div className="sm:hidden flex items-center justify-center">
-        <h1 className={getStatusClass()}>{message}</h1>
+        <h1 className={getStatusClass()} onClick={() => onOpenDetails?.()}>{message}</h1>
       </div>
 
-      <p className={`text-xl md:text-2xl font-semibold ${getSubtitleColor()}`}>
+      <p className={`text-xl md:text-2xl font-semibold ${getSubtitleColor()}`} onClick={() => onOpenDetails?.()}>
         {subtitle}
       </p>
     </div>

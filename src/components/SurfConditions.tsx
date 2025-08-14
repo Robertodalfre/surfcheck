@@ -32,26 +32,27 @@ const SurfConditions = ({
   })();
   return (
     <div className="px-4 py-6">
-      <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory no-scrollbar">
-        <div className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[120px] snap-start">
+      {/* Grid com 5 colunas para manter todos os 5 cards na mesma linha */}
+      <div className="grid grid-cols-5 gap-2">
+        <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Waves className="w-6 h-6 text-ocean-primary animate-wave" strokeWidth={1.5} />
           <span className="text-base font-bold text-foreground">{waveHeight}</span>
           <span className="text-xs text-muted-foreground">Altura</span>
         </div>
         
-        <div className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[120px] snap-start">
+        <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Navigation className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
           <span className="text-base font-bold text-foreground">{swellDirection}</span>
           <span className="text-xs text-muted-foreground">Swell</span>
         </div>
         
-        <div className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[120px] snap-start">
+        <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Clock className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
           <span className="text-base font-bold text-foreground">{period}s</span>
           <span className="text-xs text-muted-foreground">Período</span>
         </div>
         
-        <div className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[120px] snap-start">
+        <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Wind className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
           <div className="text-center">
             <div className="text-base font-bold text-foreground">{windSpeed}</div>
@@ -60,7 +61,7 @@ const SurfConditions = ({
           <span className="text-xs text-muted-foreground">Vento</span>
         </div>
 
-        <div className="surf-condition-card hover:bg-surface-elevated transition-colors min-w-[120px] snap-start">
+        <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Zap className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
           <span className="text-base font-bold text-foreground">{power}</span>
           <span className="text-xs text-muted-foreground">Força</span>
@@ -80,8 +81,8 @@ const SurfConditions = ({
           <span className="text-xs text-muted-foreground">Dicas personalizadas</span>
         </button> */}
 
-        {/* Nota 0-10 com cor por "temperatura" */}
-        <div className={`surf-condition-card transition-colors min-w-[150px] snap-start border ${tempColor}`}>
+        {/* Nota 0-10 com cor por "temperatura" – ocupa linha inteira abaixo */}
+        {/* <div className={`surf-condition-card transition-colors border ${tempColor} col-span-5 mt-2`}>
           <div className="text-2xl font-extrabold">
             {noteScore != null ? noteScore : '—'}
           </div>
@@ -89,7 +90,7 @@ const SurfConditions = ({
           <span className="text-[11px] mt-1 px-2 py-0.5 rounded-full border currentColor/20">
             {noteLabel ?? '—'}
           </span>
-        </div>
+        </div> */}
       </div>
     </div>
   );

@@ -15,9 +15,11 @@ interface SurfSpotsListProps {
   initialSpotId?: string;
   onSpotSelect?: (spot: SurfSpot) => void;
   onSpotChange?: (spotId: string) => void;
+  // Forçar paleta visual vinda de cima (Index) para sincronizar cores
+  accentStatus?: 'epic' | 'good' | 'ok' | 'bad';
 }
 
-const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChange }: SurfSpotsListProps) => {
+const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChange, accentStatus }: SurfSpotsListProps) => {
   const [spotId, setSpotId] = useState<string>(initialSpotId);
   const [full, setFull] = useState<ForecastFull | null>(null);
   const [loading, setLoading] = useState(false);
@@ -161,6 +163,27 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
     if (!full?.hours || !selDate) return [] as ForecastFull['hours'];
     return full.hours.filter(h => h.time.startsWith(selDate));
   }, [full, selDate]);
+
+  // Paleta de destaque dinâmica: prioriza status recebido por prop; fallback para label local
+  const accent = useMemo(() => {
+    const lbl = String((selectedHour as any)?.label || (selectedHour as any)?.meta?.flags?.label || '').toLowerCase();
+    const derived = lbl.includes('épico') ? 'epic'
+      : (lbl.includes('bom') || lbl.includes('ok')) ? 'ok'
+      : lbl.includes('ruim') ? 'bad'
+      : 'ok' as 'epic' | 'good' | 'ok' | 'bad';
+    const status = accentStatus || derived;
+    switch (status) {
+      case 'epic':
+        return { border: 'border-blue-500', borderSoft: 'border-blue-500/60', ring: 'ring-blue-500/40', text: 'text-blue-300', textStrong: 'text-blue-400', badge: 'border-blue-500 text-blue-300 bg-blue-500/15' } as const;
+      case 'good':
+        return { border: 'border-emerald-400', borderSoft: 'border-emerald-400/60', ring: 'ring-emerald-400/40', text: 'text-emerald-300', textStrong: 'text-emerald-400', badge: 'border-emerald-400 text-emerald-300 bg-emerald-400/15' } as const;
+      case 'bad':
+        return { border: 'border-red-500', borderSoft: 'border-red-500/60', ring: 'ring-red-500/40', text: 'text-red-300', textStrong: 'text-red-400', badge: 'border-red-500 text-red-300 bg-red-500/15' } as const;
+      case 'ok':
+      default:
+        return { border: 'border-yellow-400', borderSoft: 'border-yellow-400/60', ring: 'ring-yellow-400/40', text: 'text-yellow-300', textStrong: 'text-yellow-400', badge: 'border-yellow-500 text-yellow-300 bg-yellow-500/15' } as const;
+    }
+  }, [selectedHour, accentStatus]);
 
   const modalTimes = ['06:00','07:00','08:00','09:00','10:00','12:00','14:00','15:00','16:00','17:00'];
   const detailHours = useMemo(() => {
@@ -306,7 +329,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
       {/* Tabs */}
       <div className="px-1 mb-3">
         <div className="flex w-full items-center rounded-2xl border border-zinc-700 overflow-hidden">
-          <button className="w-full text-center py-2 text-white text-xs bg-zinc-900 border-b-2 border-[#00AEEF]">
+          <button className={`w-full text-center py-2 text-white text-xs bg-zinc-900 border-b-2 ${accent.border}`}>
             Próximos dias
           </button>
         </div>
@@ -314,7 +337,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
 
       {/* Bloco principal de previsão (clicável + swipe) */}
       <div
-        className="border-4 border-[#00AEEF] rounded-md p-3 cursor-pointer select-none"
+        className={`border-4 ${accent.border} rounded-md p-3 cursor-pointer select-none`}
         onClick={openDetails}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -324,11 +347,11 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
           <div className="w-20 flex flex-col gap-3 shrink-0">
             {loading ? (
               <>
-                <div className="px-2 py-3 border-4 border-[#00AEEF]/40 rounded-sm opacity-70 animate-pulse">
+                <div className={`px-2 py-3 border-4 ${accent.borderSoft} rounded-full opacity-70 animate-pulse`}>
                   <div className="h-3 w-10 bg-zinc-800 rounded mb-2" />
                   <div className="h-6 w-8 bg-zinc-800 rounded" />
                 </div>
-                <div className="px-2 py-3 border-4 border-[#00AEEF]/30 rounded-sm opacity-60 animate-pulse">
+                <div className={`px-2 py-3 border-4 ${accent.borderSoft} rounded-full opacity-60 animate-pulse`}>
                   <div className="h-3 w-9 bg-zinc-800 rounded mb-2" />
                   <div className="h-6 w-7 bg-zinc-800 rounded" />
                 </div>
@@ -337,9 +360,9 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
               <button
                 key={it.key}
                 onClick={(e) => { e.stopPropagation(); setSelDate(it.key); }}
-                className={`px-2 py-3 text-center border-4 rounded-sm ${selDate===it.key ? 'border-[#00AEEF]' : 'border-[#00AEEF]/60 opacity-80'}`}
+                className={`px-2 py-3 text-center border-4 rounded-full ${selDate===it.key ? accent.border : `${accent.borderSoft} opacity-80`}`}
               >
-                <div className="text-[#00AEEF] text-sm font-semibold lowercase">{it.dow}</div>
+                <div className={`${accent.textStrong} text-sm font-semibold lowercase`}>{it.dow}</div>
                 <div className="text-white text-xl font-bold leading-none">{it.day}</div>
               </button>
             ))}
@@ -350,13 +373,13 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
             {/* Top: altura da onda à esquerda; clima + botão à direita (responsivo) */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
               {/* Esquerda: onda */}
-              <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-4 border-[#00AEEF] mx-auto sm:mx-0">
+              <div className={`relative flex items-center justify-center w-28 h-28 rounded-full border-4 ${accent.border} mx-auto sm:mx-0`}>
                 {loading ? (
                   <div className="w-20 h-12 bg-zinc-800 rounded animate-pulse" />
                 ) : (
                   <div className="text-center">
                     <div className="text-white text-3xl font-bold leading-tight">{`${fmt(selectedHour?.wave_height)} m`}</div>
-                    <div className="text-[#00AEEF] text-sm font-semibold">{fmt(selectedHour?.swell_height)}</div>
+                    <div className={`${accent.textStrong} text-sm font-semibold`}>{fmt(selectedHour?.swell_height)}</div>
                   </div>
                 )}
               </div>
@@ -394,11 +417,11 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
               ) : (
                 <>
                   <div className="flex flex-col items-center">
-                    <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{cardinal(selectedHour?.swell_direction)}</div>
-                    <div className="text-[#00AEEF] text-base font-semibold mt-2 leading-none">{`${fmt(selectedHour?.swell_period, 0)} s`}</div>
+                    <div className={`flex items-center justify-center w-16 h-16 rounded-full border-4 ${accent.border} text-white text-xl font-bold`}>{cardinal(selectedHour?.swell_direction)}</div>
+                    <div className={`${accent.textStrong} text-base font-semibold mt-2 leading-none`}>{`${fmt(selectedHour?.swell_period, 0)} s`}</div>
                   </div>
                   <div className="flex flex-col items-center">
-                    <div className="flex items-center justify-center w-16 h-16 rounded-full border-4 border-[#00AEEF] text-white text-xl font-bold">{cardinal(selectedHour?.wind_direction)}</div>
+                    <div className={`flex items-center justify-center w-16 h-16 rounded-full border-4 ${accent.border} text-white text-xl font-bold`}>{cardinal(selectedHour?.wind_direction)}</div>
                     <div className="text-white text-base font-medium mt-2 leading-none">{`${fmt(selectedHour?.wind_speed, 0)} km/h`}</div>
                   </div>
                 </>
@@ -408,8 +431,8 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
         </div>
       </div>
 
-      {/* Contexto e dica do slot selecionado (abaixo do card) */}
-      <div className="mt-2 px-1">
+      {/* Contexto e dica do slot selecionado (abaixo do card) - ocultado a pedido do usuário */}
+      {/* <div className="mt-2 px-1">
         {selectedHour?.meta?.context && (
           <div className="text-xs text-zinc-300 leading-snug text-center">
             {selectedHour.meta.context}
@@ -420,7 +443,6 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
             <span className="px-2 py-0.5 rounded-full border border-[#00AEEF] text-[#00AEEF] bg-zinc-900/40">{selectedHour.meta.advice}</span>
           </div>
         )}
-        {/* Energia/Power badge */}
         {(() => {
           const P = (selectedHour as any)?.power_kwm
             ?? wavePower(selectedHour?.swell_height, selectedHour?.swell_period);
@@ -434,14 +456,14 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
             </div>
           );
         })()}
-      </div>
+      </div> */}
 
 
       {/* Seleção de dias (rolável) - cliques não abrem detalhes */}
       <div className="mt-5 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {loading
           ? Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="min-w-[70px] text-center border-4 border-[#00AEEF]/30 rounded-sm px-3 py-3 animate-pulse">
+              <div key={i} className={`min-w-[70px] text-center border-4 ${accent.borderSoft} rounded-full px-3 py-3 animate-pulse`}>
                 <div className="h-3 w-12 bg-zinc-800 rounded mb-2" />
                 <div className="h-6 w-8 bg-zinc-800 rounded" />
               </div>
@@ -450,9 +472,9 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
               <button
                 key={it.key}
                 onClick={(e) => { e.stopPropagation(); setSelDate(it.key); }}
-                className={`min-w-[70px] text-center border-4 rounded-sm px-3 py-3 ${selDate===it.key ? 'border-[#00AEEF]' : 'border-[#00AEEF]/60'}`}
+                className={`min-w-[70px] text-center border-4 rounded-full px-3 py-3 ${selDate===it.key ? accent.border : accent.borderSoft}`}
               >
-                <div className="text-[#00AEEF] text-sm font-semibold lowercase">{it.dow}</div>
+                <div className={`${accent.textStrong} text-sm font-semibold lowercase`}>{it.dow}</div>
                 <div className="text-white text-xl font-bold leading-none">{it.day}</div>
               </button>
             ))}
@@ -473,7 +495,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
               onSpotChange?.(spot.id);
             }}
             className={`px-3 py-1.5 rounded-full border text-xs transition-all hover:scale-105 active:scale-95 ${
-              spotId === spot.id ? 'border-[#00AEEF] text-white bg-zinc-900' : `text-white/80 ${getStatusColor(spot.status)}`
+              spotId === spot.id ? `${accent.border} text-white bg-zinc-900` : `text-white/80 ${getStatusColor(spot.status)}`
             }`}
             title={spot.name}
           >
@@ -579,13 +601,7 @@ const SurfSpotsList = ({ spots, initialSpotId = 'sape', onSpotSelect, onSpotChan
                 const score10 = Number.isFinite(flags.score10) ? Number(flags.score10)
                   : (Number.isFinite(flags.score) ? Number(flags.score) / 10 : null);
                 const lstr = String((h as any)?.label || flags.label || '').toLowerCase();
-                const noteBadgeClass = lstr.includes('épico')
-                  ? 'border-blue-500 text-blue-300 bg-blue-500/15'
-                  : (lstr.includes('bom') || lstr.includes('ok'))
-                    ? 'border-yellow-500 text-yellow-300 bg-yellow-500/15'
-                    : lstr.includes('ruim')
-                      ? 'border-red-500 text-red-300 bg-red-500/15'
-                      : 'border-zinc-700 text-white/80 bg-zinc-900/40';
+                const noteBadgeClass = accent.badge;
                 const isSwiping = swipingKey === h.time;
                 const translateX = isSwiping ? Math.min(0, swipingDelta) : 0;
                 const styleTransform = { transform: `translateX(${translateX}px)` } as React.CSSProperties;
