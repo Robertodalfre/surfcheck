@@ -1,4 +1,5 @@
 import { angDiff, inSector, to360 } from '../utils/angles.js';
+import logger from '../utils/logger.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
@@ -11,9 +12,9 @@ export function scoreHour(hour, spot) {
     wind: scoreWind(hour, spot),
     steepness: scoreSteepness(hour, spot),
   };
-  // Energia via potência da onda (kW/m) usando o mar total (onda combinada)
-  const H = hour.wave_height ?? 0;
-  const T = hour.wave_period ?? 0;
+  // Energia via potência da onda (kW/m) usando o swell (Hs/Tp)
+  const H = hour.swell_height ?? 0;
+  const T = (hour.swell_period ?? hour.wave_period ?? 0);
   const power_kwm = wavePowerKwM(H, T);
   scores.energy = energyScoreFromPower(power_kwm, spot?.bottomType);
   // base score (sem consistency/tide)
@@ -21,6 +22,25 @@ export function scoreHour(hour, spot) {
   // consistency será aplicada fora (média móvel)
   const label = toLabel(base);
   const reasons = buildReasons(hour, spot, scores, base);
+  // Log apenas para horários-chave para evitar ruído excessivo
+  try {
+    const t = String(hour?.time || '');
+    if (/T(06|09|12|15):00/.test(t)) {
+      logger.info({
+        time: t,
+        spot: spot?.id,
+        H_swell_height: Number.isFinite(H) ? H : null,
+        T_swell_period: Number.isFinite(T) ? T : null,
+        P_kwm: Number.isFinite(power_kwm) ? power_kwm : null,
+        swell_height: Number.isFinite(hour?.swell_height) ? hour.swell_height : null,
+        swell_period: Number.isFinite(hour?.swell_period) ? hour.swell_period : null,
+        wind_speed: Number.isFinite(hour?.wind_speed) ? hour.wind_speed : null,
+        wind_direction: Number.isFinite(hour?.wind_direction) ? hour.wind_direction : null,
+        label,
+        score: base,
+      }, 'scoring sample');
+    }
+  } catch {}
   return { scores, score: base, label, reasons, power_kwm };
 }
 

@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import SurfHeader from '../components/SurfHeader';
@@ -83,6 +82,11 @@ const Index = () => {
         if (mounted) {
           setData(res);
           setFull(resFull);
+          // Logs do payload bruto do backend (compact + full)
+          try {
+            console.log('[FRONT] compact.current', res?.current);
+            console.log('[FRONT] full.hours[0..3]', (resFull?.hours || []).slice(0, 4));
+          } catch {}
         }
       } catch (e: any) {
         if (mounted) setError(String(e?.message || e));
@@ -169,6 +173,26 @@ const Index = () => {
     return order.map(hh => dayHours.find(h => h.time.includes(`T${hh}`))).find(Boolean) || dayHours[0] || null;
   }, [dayHours, selectedSlot]);
 
+  // Logar hora selecionada e medidas principais (para comparação com Surfguru)
+  useEffect(() => {
+    const h = selectedHourObj ?? data?.current;
+    if (!h) return;
+    try {
+      console.log('[FRONT] selected hour', {
+        time: h.time,
+        wave_height: (h as any).wave_height,
+        wave_period: (h as any).wave_period, // esperado: Tp combinado
+        swell_height: (h as any).swell_height,
+        swell_period: (h as any).swell_period, // esperado: Tp do swell
+        wind_speed: (h as any).wind_speed,
+        wind_direction: (h as any).wind_direction,
+        power_kwm: (h as any).power_kwm,
+        label: (h as any).label,
+        score: (h as any).score,
+      });
+    } catch {}
+  }, [selectedHourObj, data?.current]);
+
   const availableSlots = useMemo(() => {
     const order = ['06:00','09:00','12:00','15:00'];
     return order.filter(hh => dayHours.some(h => h.time.includes(`T${hh}`)));
@@ -248,6 +272,19 @@ const Index = () => {
       return null;
     })();
     const score10 = Number.isFinite(backendScore10) ? backendScore10 : fallbackScore;
+    // Logar valores que irão para a UI
+    try {
+      console.log('[FRONT] UI conditions', {
+        waveHeight: waveHeight != null ? `${waveHeight.toFixed(1)}m` : '—',
+        swellDirection: swellDir,
+        period: period,
+        windSpeed: windSpd,
+        windDirection: windDir,
+        energyJm2,
+        score10,
+        label,
+      });
+    } catch {}
     return {
       waveHeight: waveHeight != null ? `${waveHeight.toFixed(1)}m` : '—',
       swellDirection: swellDir != null ? degToCardinal(swellDir) : '—',

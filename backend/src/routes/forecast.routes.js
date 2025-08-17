@@ -31,6 +31,22 @@ router.get('/:spotId', async (req, res) => {
 
     const hoursRaw = await fetchMarineForecast({ lat: spot.lat, lon: spot.lon, days });
     logger.info({ count: hoursRaw?.length || 0 }, 'marine+weather merged hours');
+    try {
+      const sampleIdx = (hoursRaw || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
+      const s = (sampleIdx >= 0 ? hoursRaw[sampleIdx] : hoursRaw?.[0]) || null;
+      if (s) {
+        logger.info({
+          spotId,
+          time: s.time,
+          wave_height: s.wave_height,
+          wave_period: s.wave_period,
+          swell_height: s.swell_height,
+          swell_period: s.swell_period,
+          wind_speed: s.wind_speed,
+          wind_direction: s.wind_direction,
+        }, 'hoursRaw sample (service output)');
+      }
+    } catch {}
 
     // Scoring base
     const hoursScored = hoursRaw.map((h) => ({ ...h, ...scoreHour(h, spot) }));
@@ -49,6 +65,9 @@ router.get('/:spotId', async (req, res) => {
     // Enriquecer com contexto/advice por hora (leve e textual)
     const withContext = withConsistency.map((h) => ({
       ...h,
+      // Alinhar "wave_height" ao swell para que o front (que usa wave_height para J/m²)
+      // calcule energia com Hs (compatível com Surfguru) sem alterar o frontend
+      wave_height: Number.isFinite(h?.swell_height) ? h.swell_height : h.wave_height,
       meta: buildContextAdvice(h, spot),
     }));
 
@@ -62,6 +81,23 @@ router.get('/:spotId', async (req, res) => {
       windows,
       params: { days, timezone: 'America/Sao_Paulo', windspeed_unit: 'kmh' },
     };
+    try {
+      const sampleIdx2 = (withContext || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
+      const s2 = (sampleIdx2 >= 0 ? withContext[sampleIdx2] : withContext?.[0]) || null;
+      if (s2) {
+        logger.info({
+          spotId,
+          time: s2.time,
+          wave_height: s2.wave_height,
+          wave_period: s2.wave_period,
+          swell_height: s2.swell_height,
+          swell_period: s2.swell_period,
+          power_kwm: s2.power_kwm,
+          score: s2.score,
+          label: s2.label,
+        }, 'payload sample (after scoring/context)');
+      }
+    } catch {}
 
     setCache(cacheKey, payload);
 
