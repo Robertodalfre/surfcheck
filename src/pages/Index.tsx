@@ -241,8 +241,21 @@ const Index = () => {
     const windSpd = c?.wind_speed ?? null;
     const windDir = c?.wind_direction ?? null;
     // Mostrar Força em Joules por metro quadrado (energia por área)
-    // E ≈ (1/16) * rho * g * H^2, com rho=1025 kg/m³, g=9.81 m/s² e H (onda combinada)
+    // Preferir valor do backend (energy_jpm2), senão derivar de power_kwm e período; último fallback: K*H^2
     const energyJm2 = (() => {
+      const fromBackend = (c as any)?.energy_jpm2 as number | undefined;
+      if (Number.isFinite(fromBackend)) return Number(fromBackend);
+      // Derivar de potência e período para manter coerência P = E * c_g
+      const P = (c as any)?.power_kwm as number | undefined; // kW/m
+      const T = (c as any)?.swell_period as number | undefined; // s
+      if (Number.isFinite(P) && Number.isFinite(T) && (T as number) > 0) {
+        const g = 9.81;
+        const cg = (g * (T as number)) / (4 * Math.PI);
+        const raw = (P as number) * 1000 / Math.max(1e-6, cg); // J/m²
+        const k = 0.57; // calibração padrão (spot pode aplicar no backend)
+        return Math.max(0, raw * k);
+      }
+      // Fallback clássico: E ≈ (1/16) * rho * g * H^2
       const rho = 1025;
       const g = 9.81;
       const K = (rho * g) / 16; // ~ 628.9

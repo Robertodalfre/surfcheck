@@ -19,6 +19,18 @@ export function scoreHour(hour, spot) {
   const power_kwm = wavePowerKwM(H, T);
   scores.energy = energyScoreFromPower(power_kwm, spot?.bottomType);
 
+  // Energia por área (J/m²) consistente com P = E * c_g
+  // c_g (velocidade de grupo em água profunda) ≈ g*T/(4π)
+  let energy_jpm2 = null;
+  if (Number.isFinite(power_kwm) && power_kwm > 0 && Number.isFinite(T) && T > 0) {
+    const g = 9.81;
+    const cg = (g * T) / (4 * Math.PI); // m/s
+    const power_wm = power_kwm * 1000;   // W/m
+    const raw = power_wm / Math.max(1e-6, cg); // J/m²
+    const k = Number.isFinite(spot?.energyCalibration) ? Number(spot.energyCalibration) : 0.57;
+    energy_jpm2 = Math.max(0, raw * k);
+  }
+
   // Ajuste adaptativo: maré pesa mais quando o mar está pequeno
   // smallWaveFactor = 0 quando H >= 1.5m; ~1 quando H -> 0
   const smallWaveFactor = clamp01(1 - (Number.isFinite(H) ? (H / 1.5) : 0));
@@ -53,7 +65,7 @@ export function scoreHour(hour, spot) {
       }, 'scoring sample');
     }
   } catch {}
-  return { scores, score: base, label, reasons, power_kwm };
+  return { scores, score: base, label, reasons, power_kwm, energy_jpm2 };
 }
 
 export function combine(scores) {

@@ -34,6 +34,7 @@ export type ForecastCompact = {
     wind_direction: number | null;
     wave_height: number | null;
     tide_height?: number | null;
+    energy_jpm2?: number | null;
     power_kwm?: number | null;
     reasons: string[];
     meta?: { context: string; advice: string; flags: Record<string, any> };
@@ -90,6 +91,7 @@ export type ForecastFull = {
     wind_speed: number | null;
     wind_direction: number | null;
     tide_height?: number | null;
+    energy_jpm2?: number | null;
     power_kwm?: number | null;
     meta?: { context: string; advice: string; flags: Record<string, any> };
   }>;
