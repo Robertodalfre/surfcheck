@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getSpotById } from '../domain/spots.model.js';
 import { getCache, setCache } from '../services/cache.service.js';
 import { fetchMarineForecast } from '../services/openMeteo.service.js';
+import { fetchTideForTimes } from '../services/tides.service.js';
 import { scoreHour, combine, toLabel, movingAverage } from '../scoring/scoring.engine.js';
 import { groupGoodWindows } from '../scoring/windowing.js';
 import logger from '../utils/logger.js';
@@ -31,6 +32,17 @@ router.get('/:spotId', async (req, res) => {
 
     const hoursRaw = await fetchMarineForecast({ lat: spot.lat, lon: spot.lon, days });
     logger.info({ count: hoursRaw?.length || 0 }, 'marine+weather merged hours');
+
+    // Fetch tide data aligned to the same hourly times (if available)
+    let tide = { source: null, unit: 'm', events: [], heightsByTime: new Map(), min: null, max: null };
+    try {
+      const times = (hoursRaw || []).map(h => h.time).filter(Boolean);
+      if (times.length > 0) {
+        tide = await fetchTideForTimes({ lat: spot.lat, lon: spot.lon, times, days });
+      }
+    } catch (e) {
+      logger.warn({ err: String(e?.message || e) }, 'tide fetch failed, continuing without tide');
+    }
     try {
       const sampleIdx = (hoursRaw || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
       const s = (sampleIdx >= 0 ? hoursRaw[sampleIdx] : hoursRaw?.[0]) || null;
@@ -48,8 +60,16 @@ router.get('/:spotId', async (req, res) => {
       }
     } catch {}
 
+    // Merge tide height before scoring
+    const hoursWithTide = hoursRaw.map((h) => {
+      const th = tide?.heightsByTime instanceof Map ? tide.heightsByTime.get(h.time) : null;
+      const tmin = Number.isFinite(tide?.min) ? Number(tide.min) : null;
+      const tmax = Number.isFinite(tide?.max) ? Number(tide.max) : null;
+      return { ...h, tide_height: Number.isFinite(th) ? th : null, tide_min: tmin, tide_max: tmax };
+    });
+
     // Scoring base
-    const hoursScored = hoursRaw.map((h) => ({ ...h, ...scoreHour(h, spot) }));
+    const hoursScored = hoursWithTide.map((h) => ({ ...h, ...scoreHour(h, spot) }));
 
     // Consistency: média móvel 3h aplicada como fator (0..1) via diferença local
     const baseScores = hoursScored.map((h) => h.score);
@@ -79,7 +99,8 @@ router.get('/:spotId', async (req, res) => {
       spot: summarizeSpot(spot),
       hours: withContext,
       windows,
-      params: { days, timezone: 'America/Sao_Paulo', windspeed_unit: 'kmh' },
+      tide_events: Array.isArray(tide?.events) ? tide.events : [],
+      params: { days, timezone: 'America/Sao_Paulo', windspeed_unit: 'kmh', tide_source: tide?.source || null, tide_unit: tide?.unit || 'm' },
     };
     try {
       const sampleIdx2 = (withContext || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
@@ -178,11 +199,13 @@ function toMinimalPayload(fullPayload, opts) {
         wind_speed: selected.wind_speed,
         wind_direction: selected.wind_direction,
         wave_height: selected.wave_height,
+        tide_height: selected.tide_height,
         power_kwm: selected.power_kwm,
         reasons: selected.reasons,
         meta: selected.meta,
       } : null,
       windows: fullPayload.windows || [],
+      tide_events: fullPayload.tide_events || [],
       chart: slotsArr.map(s => ({ time: s.time, score: s.score })),
       params: fullPayload.params,
     };
@@ -202,11 +225,13 @@ function toMinimalPayload(fullPayload, opts) {
       wind_speed: current.wind_speed,
       wind_direction: current.wind_direction,
       wave_height: current.wave_height,
+      tide_height: current.tide_height,
       power_kwm: current.power_kwm,
       reasons: current.reasons,
       meta: current.meta,
     } : null,
     windows: fullPayload.windows || [],
+    tide_events: fullPayload.tide_events || [],
     chart,
     params: fullPayload.params,
   };

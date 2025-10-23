@@ -106,17 +106,16 @@ const Index = () => {
         const res = await getSpots();
         if (!mounted) return;
         const spots = (res.spots || []) as SpotMeta[];
-        // Opções desejadas
-        const desired = ['sape', 'lagoinha', 'itamambuca'];
-        // Lista para a lupa (os 3 fixos, se existirem)
-        const sopts = spots.filter(s => desired.includes(s.id)).map(s => ({ id: s.id, name: s.name }));
-        setSearchSpots(sopts);
-        // Lista "Outros picos" (não inclui o atual)
-        const mapped = spots
-          .filter(s => desired.includes(s.id) && s.id !== spotId)
-          .filter(s => s.id !== spotId)
-          .map(s => ({ id: s.id, name: s.name, status: 'ok' as const, height: '—' }));
-        setOtherSpots(mapped);
+        // Opções desejadas (ordem fixa)
+        const desired = ['sape', 'lagoinha', 'toninhas'];
+        // Lista para a lupa seguindo a ordem desejada (se existirem no backend)
+        const ordered = desired
+          .map(id => spots.find(s => s.id === id))
+          .filter(Boolean) as SpotMeta[];
+        setSearchSpots(ordered.map(s => ({ id: s.id, name: s.name })));
+        // Lista "Outros picos" (não inclui o atual) respeitando a mesma ordem
+        const othersOrdered = ordered.filter(s => s.id !== spotId);
+        setOtherSpots(othersOrdered.map(s => ({ id: s.id, name: s.name, status: 'ok' as const, height: '—' })));
       } catch (e) {
         // Silenciar erro na lista de spots
       }

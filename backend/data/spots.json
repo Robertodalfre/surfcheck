@@ -67,6 +67,29 @@
     "amenities": ["river mouth"],
     "crowdLevel": 0.6,
     "localNotes": "River break muito consistente. Winter é a melhor época. Prefere swell do sul e vento offshore de NNW–NW. Surfável em todas as marés, mas pode ficar lotado (hazard: crowd)."
+  },
+  {
+    "id": "toninhas",
+    "name": "Praia das Toninhas (Ubatuba)",
+    "lat": -23.48,
+    "lon": -45.06,
+    "beachAzimuth": 150,
+    "swellWindow": [120, 180],
+    "windShelter": { "offshore": [300, 330], "badOnshore": [120, 170] },
+    "bottomType": "beachbreak",
+    "tidePreference": ["mid", "high"],
+    "tideSensitivity": 0.2,
+    "idealApproach": [20, 45],
+    "shadowBlocks": [],
+    "bestSwellDirections": ["SE", "SSE", "S"],
+    "idealPeriodRange": [10, 15],
+    "minSwellHeight": 1.0,
+    "windTolerance": { "offshoreMax": 25, "onshoreMax": 10 },
+    "hazards": ["corrente forte", "crowd elevado na alta temporada"],
+    "suitableLevels": ["intermediate", "advanced"],
+    "amenities": ["quiosques", "estacionamento", "hospedagem próxima"],
+    "crowdLevel": 0.6,
+    "localNotes": "Beach break bem exposto e consistente, funciona praticamente o ano todo, com melhor qualidade no inverno e na primavera. Melhores ondulações de SE/SSE/S, funcionando bem com groundswells. Vento offshore de N/NW segura bem as condições. Costuma encher bastante de surfistas, especialmente em finais de semana e feriados. No canto direito as ondas tendem a ser mais cheias, boas para iniciantes; no canto esquerdo (perto da curva) as ondas são mais fortes e rápidas, indicadas para intermediários/avançados."
   }
 ]
 

@@ -11,12 +11,24 @@ export function scoreHour(hour, spot) {
     texture: scoreTexture(hour),
     wind: scoreWind(hour, spot),
     steepness: scoreSteepness(hour, spot),
+    tide: scoreTide(hour, spot),
   };
   // Energia via potência da onda (kW/m) usando o swell (Hs/Tp)
   const H = hour.swell_height ?? 0;
   const T = (hour.swell_period ?? hour.wave_period ?? 0);
   const power_kwm = wavePowerKwM(H, T);
   scores.energy = energyScoreFromPower(power_kwm, spot?.bottomType);
+
+  // Ajuste adaptativo: maré pesa mais quando o mar está pequeno
+  // smallWaveFactor = 0 quando H >= 1.5m; ~1 quando H -> 0
+  const smallWaveFactor = clamp01(1 - (Number.isFinite(H) ? (H / 1.5) : 0));
+  // Bônus leve para beachbreaks, onde a maré influencia mais a forma
+  const isBeach = String(spot?.bottomType || '').toLowerCase().includes('beach');
+  const beachBoost = isBeach ? 0.15 : 0.0;
+  const tideScale = 1 + (0.8 + beachBoost) * smallWaveFactor; // até ~1.95 em beach com H muito pequeno
+  if (Number.isFinite(scores.tide)) {
+    scores.tide = clamp01(scores.tide * tideScale);
+  }
   // base score (sem consistency/tide)
   const base = combine({ ...scores, consistency: 1, tide: 1 });
   // consistency será aplicada fora (média móvel)
@@ -48,12 +60,12 @@ export function combine(scores) {
   const out = (
     0.20 * (scores.swellAngle ?? 0) +
     0.15 * (scores.window ?? 0) +
-    0.20 * (scores.energy ?? 0) +
-    0.15 * (scores.texture ?? 0) +
-    0.15 * (scores.wind ?? 0) +
+    0.15 * (scores.energy ?? 0) +
+    0.13 * (scores.texture ?? 0) +
+    0.12 * (scores.wind ?? 0) +
     0.10 * (scores.steepness ?? 0) +
     0.05 * (scores.consistency ?? 1) +
-    0.00 * (scores.tide ?? 1)
+    0.10 * (scores.tide ?? 0)
   );
   return Math.round(100 * out);
 }
@@ -157,6 +169,25 @@ function scoreSteepness(h, s) {
   if (S >= ranges.ideal[0] && S <= ranges.ideal[1]) return 1;
   if (S < ranges.ideal[0]) return clamp01((S - ranges.hard[0]) / (ranges.ideal[0] - ranges.hard[0]));
   return clamp01((ranges.hard[1] - S) / (ranges.hard[1] - ranges.ideal[1]));
+}
+
+function scoreTide(h, s) {
+  const H = Number.isFinite(h?.tide_height) ? Number(h.tide_height) : null;
+  const Tmin = Number.isFinite(h?.tide_min) ? Number(h.tide_min) : null;
+  const Tmax = Number.isFinite(h?.tide_max) ? Number(h.tide_max) : null;
+  if (H == null || Tmin == null || Tmax == null || Tmax <= Tmin) return 0;
+  const norm = clamp01((H - Tmin) / (Tmax - Tmin));
+  const prefs = Array.isArray(s?.tidePreference) && s.tidePreference.length > 0 ? s.tidePreference : ['mid'];
+  const ranges = { low: [0.0, 0.3], mid: [0.3, 0.7], high: [0.7, 1.0] };
+  let best = 0;
+  for (const p of prefs) {
+    const r = ranges[p] || ranges.mid;
+    const sc = bandScore(norm, r[0], r[1]);
+    if (sc > best) best = sc;
+  }
+  const sens = Number.isFinite(s?.tideSensitivity) ? Math.max(0, Math.min(1, s.tideSensitivity)) : 0.5;
+  const factor = 0.5 + 0.5 * sens; // 0.5..1.0
+  return clamp01(best * factor);
 }
 
 function steepRanges(type) {

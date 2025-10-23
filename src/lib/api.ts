@@ -33,13 +33,15 @@ export type ForecastCompact = {
     wind_speed: number | null;
     wind_direction: number | null;
     wave_height: number | null;
+    tide_height?: number | null;
     power_kwm?: number | null;
     reasons: string[];
     meta?: { context: string; advice: string; flags: Record<string, any> };
   } | null;
   windows: { start: string; end: string; score_avg: number; highlights: { reason: string; count: number }[] }[];
   chart: { time: string; score: number }[];
-  params: { days: number; timezone: string; windspeed_unit: string };
+  tide_events?: Array<{ time: string; type: 'high' | 'low'; height: number | null }>;
+  params: { days: number; timezone: string; windspeed_unit: string; tide_source?: string | null; tide_unit?: string };
   cache: { fresh: boolean };
 };
 
@@ -87,11 +89,13 @@ export type ForecastFull = {
     swell_period: number | null;
     wind_speed: number | null;
     wind_direction: number | null;
+    tide_height?: number | null;
     power_kwm?: number | null;
     meta?: { context: string; advice: string; flags: Record<string, any> };
   }>;
   windows: any[];
-  params: any;
+  tide_events?: Array<{ time: string; type: 'high' | 'low'; height: number | null }>;
+  params: { days: number; timezone: string; windspeed_unit: string; tide_source?: string | null; tide_unit?: string };
 };
 
 export async function getForecastFull(spotId: string, days = 5): Promise<ForecastFull> {
