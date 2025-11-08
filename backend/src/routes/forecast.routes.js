@@ -18,7 +18,8 @@ router.get('/:spotId', async (req, res) => {
 
     const cacheKey = `forecast:${spotId}:${days}`;
     logger.info({ spotId, days, cacheKey }, 'forecast request');
-    const cached = getCache(cacheKey);
+    const wantFresh = isTrue(req.query.fresh);
+    const cached = wantFresh ? null : getCache(cacheKey);
     if (cached) {
       logger.info({ spotId, days }, 'cache hit');
       const compact = isTrue(req.query.compact);
@@ -31,34 +32,35 @@ router.get('/:spotId', async (req, res) => {
     }
 
     const hoursRaw = await fetchMarineForecast({ lat: spot.lat, lon: spot.lon, days });
-    logger.info({ count: hoursRaw?.length || 0 }, 'marine+weather merged hours');
+    // logger.info({ count: hoursRaw?.length || 0 }, 'marine+weather merged hours');
 
     // Fetch tide data aligned to the same hourly times (if available)
     let tide = { source: null, unit: 'm', events: [], heightsByTime: new Map(), min: null, max: null };
     try {
       const times = (hoursRaw || []).map(h => h.time).filter(Boolean);
       if (times.length > 0) {
-        tide = await fetchTideForTimes({ lat: spot.lat, lon: spot.lon, times, days });
+        const tidesFresh = isTrue(req.query.tidesFresh);
+        tide = await fetchTideForTimes({ lat: spot.lat, lon: spot.lon, times, days, spotId, tidesFresh });
       }
     } catch (e) {
       logger.warn({ err: String(e?.message || e) }, 'tide fetch failed, continuing without tide');
     }
-    try {
-      const sampleIdx = (hoursRaw || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
-      const s = (sampleIdx >= 0 ? hoursRaw[sampleIdx] : hoursRaw?.[0]) || null;
-      if (s) {
-        logger.info({
-          spotId,
-          time: s.time,
-          wave_height: s.wave_height,
-          wave_period: s.wave_period,
-          swell_height: s.swell_height,
-          swell_period: s.swell_period,
-          wind_speed: s.wind_speed,
-          wind_direction: s.wind_direction,
-        }, 'hoursRaw sample (service output)');
-      }
-    } catch {}
+    // try {
+    //   const sampleIdx = (hoursRaw || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
+    //   const s = (sampleIdx >= 0 ? hoursRaw[sampleIdx] : hoursRaw?.[0]) || null;
+    //   if (s) {
+    //     logger.info({
+    //       spotId,
+    //       time: s.time,
+    //       wave_height: s.wave_height,
+    //       wave_period: s.wave_period,
+    //       swell_height: s.swell_height,
+    //       swell_period: s.swell_period,
+    //       wind_speed: s.wind_speed,
+    //       wind_direction: s.wind_direction,
+    //     }, 'hoursRaw sample (service output)');
+    //   }
+    // } catch {}
 
     // Merge tide height before scoring
     const hoursWithTide = hoursRaw.map((h) => {
@@ -83,17 +85,30 @@ router.get('/:spotId', async (req, res) => {
     });
 
     // Enriquecer com contexto/advice por hora (leve e textual)
-    const withContext = withConsistency.map((h) => ({
-      ...h,
-      // Alinhar "wave_height" ao swell para que o front (que usa wave_height para J/m²)
-      // calcule energia com Hs (compatível com Surfguru) sem alterar o frontend
-      wave_height: Number.isFinite(h?.swell_height) ? h.swell_height : h.wave_height,
-      meta: buildContextAdvice(h, spot),
-    }));
+    const withContext = withConsistency.map((h) => {
+      const contextAdvice = buildContextAdvice(h, spot);
+      // Manter o meta do scoring engine (que tem board) e fazer merge com contextAdvice
+      const mergedMeta = {
+        ...h.meta, // meta do scoring engine (tem board, advice, flags)
+        context: contextAdvice.context, // contexto detalhado da rota
+        flags: {
+          ...h.meta?.flags,
+          ...contextAdvice.flags, // flags da rota (withinWindow, etc)
+        }
+      };
+      
+      return {
+        ...h,
+        // Alinhar "wave_height" ao swell para que o front (que usa wave_height para J/m²)
+        // calcule energia com Hs (compatível com Surfguru) sem alterar o frontend
+        wave_height: Number.isFinite(h?.swell_height) ? h.swell_height : h.wave_height,
+        meta: mergedMeta,
+      };
+    });
 
     // Janelas
     const windows = groupGoodWindows(withConsistency, 60);
-    logger.info({ windows: windows.length }, 'good windows computed');
+    // logger.info({ windows: windows.length }, 'good windows computed');
 
     const payload = {
       spot: summarizeSpot(spot),
@@ -102,23 +117,23 @@ router.get('/:spotId', async (req, res) => {
       tide_events: Array.isArray(tide?.events) ? tide.events : [],
       params: { days, timezone: 'America/Sao_Paulo', windspeed_unit: 'kmh', tide_source: tide?.source || null, tide_unit: tide?.unit || 'm' },
     };
-    try {
-      const sampleIdx2 = (withContext || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
-      const s2 = (sampleIdx2 >= 0 ? withContext[sampleIdx2] : withContext?.[0]) || null;
-      if (s2) {
-        logger.info({
-          spotId,
-          time: s2.time,
-          wave_height: s2.wave_height,
-          wave_period: s2.wave_period,
-          swell_height: s2.swell_height,
-          swell_period: s2.swell_period,
-          power_kwm: s2.power_kwm,
-          score: s2.score,
-          label: s2.label,
-        }, 'payload sample (after scoring/context)');
-      }
-    } catch {}
+    // try {
+    //   const sampleIdx2 = (withContext || []).findIndex(h => /T(06|09|12|15):00/.test(String(h?.time || '')));
+    //   const s2 = (sampleIdx2 >= 0 ? withContext[sampleIdx2] : withContext?.[0]) || null;
+    //   if (s2) {
+    //     logger.info({
+    //       spotId,
+    //       time: s2.time,
+    //       wave_height: s2.wave_height,
+    //       wave_period: s2.wave_period,
+    //       swell_height: s2.swell_height,
+    //       swell_period: s2.swell_period,
+    //       power_kwm: s2.power_kwm,
+    //       score: s2.score,
+    //       label: s2.label,
+    //     }, 'payload sample (after scoring/context)');
+    //   }
+    // } catch {}
 
     setCache(cacheKey, payload);
 

@@ -1,5 +1,5 @@
 
-import { Waves, Navigation, Clock, Wind, Zap, Bot } from 'lucide-react';
+import { Waves, Navigation, Clock, Wind, Zap, Bolt } from 'lucide-react';
 
 interface ConditionProps {
   waveHeight: string;
@@ -7,10 +7,13 @@ interface ConditionProps {
   period: string;
   windSpeed: string;
   windDirection: string;
-  power: string;
+  energy: string; // J/m²
+  powerKw: string; // kW/m
   // opcionais para "Nota" e cor por temperatura (épico/bom/ok/ruim)
   noteScore?: number | null;
   noteLabel?: string | null;
+  advice?: string | null;
+  board?: 'long' | 'long+short' | 'short' | string | null;
 }
 
 const SurfConditions = ({ 
@@ -19,10 +22,16 @@ const SurfConditions = ({
   period, 
   windSpeed, 
   windDirection,
-  power,
+  energy,
+  powerKw,
   noteScore = null,
   noteLabel = null,
+  advice = null,
+  board = null,
 }: ConditionProps) => {
+  // Log para debug
+  console.log('[SURF_CONDITIONS] Props received:', { advice, board });
+  
   const tempColor = (() => {
     const lbl = (noteLabel || '').toLowerCase();
     if (lbl.includes('épico')) return 'border-blue-500 text-blue-300 bg-blue-500/15';
@@ -32,7 +41,7 @@ const SurfConditions = ({
   })();
   return (
     <div className="px-4 py-6">
-      {/* Grid com 5 colunas para manter todos os 5 cards na mesma linha */}
+      {/* Grid com 5 colunas: Altura, Swell, Período, Vento, Energia */}
       <div className="grid grid-cols-5 gap-2">
         <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Waves className="w-6 h-6 text-ocean-primary animate-wave" strokeWidth={1.5} />
@@ -63,9 +72,15 @@ const SurfConditions = ({
 
         <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
           <Zap className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
-          <span className="text-base font-bold text-foreground">{power}</span>
-          <span className="text-xs text-muted-foreground">Força</span>
+          <span className="text-base font-bold text-foreground">{energy}</span>
+          <span className="text-xs text-muted-foreground">Energia</span>
         </div>
+
+        {/* <div className="surf-condition-card hover:bg-surface-elevated transition-colors">
+          <Bolt className="w-6 h-6 text-ocean-primary" strokeWidth={1.5} />
+          <span className="text-base font-bold text-foreground">{powerKw}</span>
+          <span className="text-xs text-muted-foreground">Potência</span>
+        </div> */}
 
         {/* IA card
         <button
@@ -92,6 +107,15 @@ const SurfConditions = ({
           </span>
         </div> */}
       </div>
+
+      {/* Chip de conselho/prancha */}
+      {(advice || board) && (
+        <div className="mt-3 flex items-center justify-center">
+          <span className="px-2 py-1 text-[11px] rounded-full border border-[#00AEEF] text-[#00AEEF] bg-zinc-900/40">
+            {board ? `${String(board).toUpperCase()} · ` : ''}{advice}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

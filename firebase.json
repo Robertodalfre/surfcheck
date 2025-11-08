@@ -38,6 +38,31 @@
         "function": { "functionId": "api", "region": "southamerica-east1" }
       },
       {
+        "source": "/scheduling",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/scheduling/**",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/notifications",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/notifications/**",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/analytics",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        
+        "source": "/analytics/**",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

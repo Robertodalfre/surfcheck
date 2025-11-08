@@ -104,3 +104,6 @@ export async function getForecastFull(spotId: string, days = 5): Promise<Forecas
   const url = `${API_URL}/forecast/${encodeURIComponent(spotId)}?days=${days}`;
   return fetchJson<ForecastFull>(url);
 }
+
+// Exportar API_URL para uso em outros módulos
+export { API_URL };

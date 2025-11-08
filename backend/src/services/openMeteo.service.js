@@ -61,7 +61,7 @@ export async function fetchMarineForecast({ lat, lon, days = 3 }) {
     const marineUrl = `${MARINE_BASE}?${marineParams.toString()}`;
     const weatherUrl = `${WEATHER_BASE}?${weatherParams.toString()}`;
 
-    logger.info({ marineUrl, weatherUrl, attempt, marine_models: useModels || 'best-match' }, 'Fetching Open-Meteo Marine & Weather');
+    // logger.info({ marineUrl, weatherUrl, attempt, marine_models: useModels || 'best-match' }, 'Fetching Open-Meteo Marine & Weather');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -93,18 +93,18 @@ export async function fetchMarineForecast({ lat, lon, days = 3 }) {
 
       const marine = await marineRes.json();
       const weather = await weatherRes.json();
-      try {
-        logger.info({
-          marine_units: marine?.hourly_units,
-          marine_lat: marine?.latitude,
-          marine_lon: marine?.longitude,
-          marine_gen_ms: marine?.generationtime_ms,
-          weather_units: weather?.hourly_units,
-          weather_lat: weather?.latitude,
-          weather_lon: weather?.longitude,
-          weather_gen_ms: weather?.generationtime_ms,
-        }, 'Open-Meteo responses meta');
-      } catch {}
+      // try {
+      //   logger.info({
+      //     marine_units: marine?.hourly_units,
+      //     marine_lat: marine?.latitude,
+      //     marine_lon: marine?.longitude,
+      //     marine_gen_ms: marine?.generationtime_ms,
+      //     weather_units: weather?.hourly_units,
+      //     weather_lat: weather?.latitude,
+      //     weather_lon: weather?.longitude,
+      //     weather_gen_ms: weather?.generationtime_ms,
+      //   }, 'Open-Meteo responses meta');
+      // } catch {}
       return mergeHourly(marine, weather);
     } catch (err) {
       lastErr = err;
@@ -175,25 +175,6 @@ function mergeHourly(marine, weather) {
       wind_direction: wi >= 0 ? num(weather.hourly.wind_direction_10m?.[wi]) : null,
     });
   }
-  // Log resumido do uso de pico vs médio e exemplo (preferir 12:00)
-  try {
-    const preferIdx = Math.max(0, t.findIndex(x => typeof x === 'string' && x.includes('T12:00')));
-    const sample = out[preferIdx] || out[0] || null;
-    logger.info({
-      counts: cnt,
-      sample: sample ? {
-        time: sample.time,
-        wave_height: sample.wave_height,
-        wave_period: sample.wave_period,
-        swell_height: sample.swell_height,
-        swell_period: sample.swell_period,
-        wind_wave_height: sample.wind_wave_height,
-        wind_wave_period: sample.wind_wave_period,
-        wind_speed: sample.wind_speed,
-        wind_direction: sample.wind_direction,
-      } : null,
-    }, 'mergeHourly summary (peak vs mean and sample)');
-  } catch {}
   return out;
 }
 

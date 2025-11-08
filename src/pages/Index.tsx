@@ -4,6 +4,7 @@ import SurfHeader from '../components/SurfHeader';
 import SurfStatus from '../components/SurfStatus';
 import SurfConditions from '../components/SurfConditions';
 import SurfSpotsList from '../components/SurfSpotsList';
+import TideChart from '../components/TideChart';
 import { getForecastCompact, type ForecastCompact, getForecastFull, type ForecastFull, getSpots, type SpotMeta } from '@/lib/api';
 
 type Status = 'epic' | 'good' | 'ok' | 'bad';
@@ -106,15 +107,10 @@ const Index = () => {
         const res = await getSpots();
         if (!mounted) return;
         const spots = (res.spots || []) as SpotMeta[];
-        // Opções desejadas (ordem fixa)
-        const desired = ['sape', 'lagoinha', 'toninhas'];
-        // Lista para a lupa seguindo a ordem desejada (se existirem no backend)
-        const ordered = desired
-          .map(id => spots.find(s => s.id === id))
-          .filter(Boolean) as SpotMeta[];
-        setSearchSpots(ordered.map(s => ({ id: s.id, name: s.name })));
-        // Lista "Outros picos" (não inclui o atual) respeitando a mesma ordem
-        const othersOrdered = ordered.filter(s => s.id !== spotId);
+        // Usar todos os spots disponíveis
+        setSearchSpots(spots.map(s => ({ id: s.id, name: s.name })));
+        // Lista "Outros picos" (não inclui o atual)
+        const othersOrdered = spots.filter(s => s.id !== spotId);
         setOtherSpots(othersOrdered.map(s => ({ id: s.id, name: s.name, status: 'ok' as const, height: '—' })));
       } catch (e) {
         // Silenciar erro na lista de spots
@@ -171,6 +167,9 @@ const Index = () => {
     const order = ['06:00','09:00','12:00','15:00'];
     return order.map(hh => dayHours.find(h => h.time.includes(`T${hh}`))).find(Boolean) || dayHours[0] || null;
   }, [dayHours, selectedSlot]);
+
+  const selectedIsoTime = useMemo(() => selectedHourObj?.time ?? data?.current?.time ?? null, [selectedHourObj, data?.current]);
+  const tideUnit = useMemo(() => (full as any)?.params?.tide_unit ?? 'm', [full]);
 
   // Logar hora selecionada e medidas principais (para comparação com Surfguru)
   useEffect(() => {
@@ -265,6 +264,12 @@ const Index = () => {
       if (Number.isFinite(Hs)) return K * (Hs as number) * (Hs as number);
       return null;
     })();
+    const powerKw = (() => {
+      const P = (c as any)?.power_kwm as number | undefined;
+      return Number.isFinite(P) ? Number(P) : null;
+    })();
+    const advice = (c as any)?.meta?.advice ?? null;
+    const board = (c as any)?.meta?.flags?.board ?? null;
     // score opcional vindo do backend em meta.flags.score; fallback por label
     // Preferir score do backend em escala 0..10
     const backendScore10 = (() => {
@@ -295,6 +300,9 @@ const Index = () => {
         energyJm2,
         score10,
         label,
+        advice,
+        board,
+        meta: (c as any)?.meta,
       });
     } catch {}
     return {
@@ -303,9 +311,12 @@ const Index = () => {
       period: period != null ? `${period.toFixed(0)}` : '—',
       windSpeed: windSpd != null ? `${windSpd.toFixed(0)}km/h` : '—',
       windDirection: windDir != null ? degToCardinal(windDir) : '—',
-      power: energyJm2 != null ? `${Math.round(energyJm2)} J/m²` : '—',
+      energy: energyJm2 != null ? `${Math.round(energyJm2)} J/m²` : '—',
+      powerKw: powerKw != null ? `${powerKw.toFixed(1)} kW/m` : '—',
       noteScore: score10 != null ? Math.max(0, Math.min(10, Number(score10))).toFixed(1) : null,
       noteLabel: label,
+      advice,
+      board,
     };
   }, [data, selectedHourObj]);
 
@@ -433,10 +444,24 @@ const Index = () => {
           period={conditions.period}
           windSpeed={conditions.windSpeed}
           windDirection={conditions.windDirection}
-          power={conditions.power}
+          energy={conditions.energy}
+          powerKw={conditions.powerKw}
           noteScore={conditions.noteScore as any}
           noteLabel={conditions.noteLabel as any}
+          advice={conditions.advice as any}
+          board={conditions.board as any}
         />
+
+        {/* Aba/Seção de Maré - movida para depois do advice */}
+        <div className="px-4 mt-6">
+          <div className="text-white font-semibold mb-2">Maré</div>
+          <TideChart
+            hours={dayHours as any}
+            events={(full as any)?.tide_events || []}
+            selectedTime={selectedIsoTime as any}
+            unit={tideUnit as any}
+          />
+        </div>
 
         {error && (
           <div className="text-red-400 text-xs px-4 py-2">{error}</div>

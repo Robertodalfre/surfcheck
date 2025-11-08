@@ -12,6 +12,7 @@ export function scoreHour(hour, spot) {
     wind: scoreWind(hour, spot),
     steepness: scoreSteepness(hour, spot),
     tide: scoreTide(hour, spot),
+    height: scoreHeight(hour, spot),
   };
   // Energia via potência da onda (kW/m) usando o swell (Hs/Tp)
   const H = hour.swell_height ?? 0;
@@ -31,6 +32,21 @@ export function scoreHour(hour, spot) {
     energy_jpm2 = Math.max(0, raw * k);
   }
 
+function scoreHeight(h, s) {
+  const H = Number(h?.swell_height) || 0;
+  const bands = s?.heightBands || [
+    { lt: 0.8, score: 0.10 },
+    { lt: 1.0, score: 0.35 },
+    { lt: 1.2, score: 0.65 },
+    { ge: 1.2, score: 0.90 },
+  ];
+  for (const b of bands) {
+    if (b.lt != null && H < b.lt) return b.score;
+    if (b.ge != null && H >= b.ge) return b.score;
+  }
+  return 0.4;
+}
+
   // Ajuste adaptativo: maré pesa mais quando o mar está pequeno
   // smallWaveFactor = 0 quando H >= 1.5m; ~1 quando H -> 0
   const smallWaveFactor = clamp01(1 - (Number.isFinite(H) ? (H / 1.5) : 0));
@@ -42,42 +58,56 @@ export function scoreHour(hour, spot) {
     scores.tide = clamp01(scores.tide * tideScale);
   }
   // base score (sem consistency/tide)
-  const base = combine({ ...scores, consistency: 1, tide: 1 });
+  let base = combine({ ...scores, consistency: 1, tide: 1 });
+
+  // Penalidades globais com overrides por pico
+  const P = Number.isFinite(power_kwm) ? power_kwm : 0;
+  const Hs = Number.isFinite(H) ? H : 0;
+  const smallSea = spot?.smallSeaPenalty || { pKwCap: 3.0, pKwSoft: 3.5, hSoft: 1.0, softFactor: 0.7, hardCapScore: 60 };
+  if (P < smallSea.pKwSoft && Hs < smallSea.hSoft) base = Math.round(base * smallSea.softFactor);
+  if (P < smallSea.pKwCap) base = Math.min(base, smallSea.hardCapScore);
+
+  // Caps por vento onshore (override por pico)
+  const windCaps = spot?.onshoreCaps || { soft: { v: 8, score: 60 }, hard: { v: 12, score: 50 } };
+  const onshoreInfo = windOnshoreInfo(hour, spot);
+  if (onshoreInfo.isOnshore && hour?.wind_speed != null) {
+    const v = Number(hour.wind_speed) || 0;
+    if (v > windCaps.hard.v) base = Math.min(base, windCaps.hard.score);
+    else if (v > windCaps.soft.v) base = Math.min(base, windCaps.soft.score);
+  }
+
   // consistency será aplicada fora (média móvel)
   const label = toLabel(base);
   const reasons = buildReasons(hour, spot, scores, base);
-  // Log apenas para horários-chave para evitar ruído excessivo
-  try {
-    const t = String(hour?.time || '');
-    if (/T(06|09|12|15):00/.test(t)) {
-      logger.info({
-        time: t,
-        spot: spot?.id,
-        H_swell_height: Number.isFinite(H) ? H : null,
-        T_swell_period: Number.isFinite(T) ? T : null,
-        P_kwm: Number.isFinite(power_kwm) ? power_kwm : null,
-        swell_height: Number.isFinite(hour?.swell_height) ? hour.swell_height : null,
-        swell_period: Number.isFinite(hour?.swell_period) ? hour.swell_period : null,
-        wind_speed: Number.isFinite(hour?.wind_speed) ? hour.wind_speed : null,
-        wind_direction: Number.isFinite(hour?.wind_direction) ? hour.wind_direction : null,
-        label,
-        score: base,
-      }, 'scoring sample');
-    }
-  } catch {}
-  return { scores, score: base, label, reasons, power_kwm, energy_jpm2 };
+
+  // Mensagens contextuais (meta)
+  const meta = buildContextMeta(hour, spot, { power_kwm, Hs, label, onshoreInfo });
+  // Log comentado para reduzir ruído
+  // try {
+  //   const t = String(hour?.time || '');
+  //   if (/T(06|09|12|15):00/.test(t)) {
+  //     logger.info({
+  //       time: t,
+  //       spot: spot?.id,
+  //       H_swell_height: Number.isFinite(H) ? H : null,
+  //       T_swell_period: Number.isFinite(T) ? T : null,
+  //     }, 'scoring sample');
+  //   }
+  // } catch {}
+  return { scores, score: base, label, reasons, power_kwm, energy_jpm2, meta };
 }
 
 export function combine(scores) {
   const out = (
-    0.20 * (scores.swellAngle ?? 0) +
-    0.15 * (scores.window ?? 0) +
-    0.15 * (scores.energy ?? 0) +
-    0.13 * (scores.texture ?? 0) +
-    0.12 * (scores.wind ?? 0) +
-    0.10 * (scores.steepness ?? 0) +
-    0.05 * (scores.consistency ?? 1) +
-    0.10 * (scores.tide ?? 0)
+    0.18 * (scores.swellAngle ?? 0) +
+    0.10 * (scores.window ?? 0) +
+    0.22 * (scores.energy ?? 0) +
+    0.18 * (scores.height ?? 0) +
+    0.10 * (scores.texture ?? 0) +
+    0.10 * (scores.wind ?? 0) +
+    0.05 * (scores.steepness ?? 0) +
+    0.02 * (scores.consistency ?? 1) +
+    0.05 * (scores.tide ?? 0)
   );
   return Math.round(100 * out);
 }
@@ -170,6 +200,13 @@ function scoreWind(h, s) {
   return dirScore * vScore;
 }
 
+function windOnshoreInfo(h, s) {
+  const offshore = to360(s.beachAzimuth + 180);
+  const d = Number.isFinite(h?.wind_direction) ? angDiff(h.wind_direction, offshore) : 180;
+  const isOnshore = d > 90; // >90º longe do offshore tende a onshore/cross-on
+  return { isOnshore, dFromOffshore: d };
+}
+
 function scoreSteepness(h, s) {
   const H = h.swell_height ?? 0;
   const T = h.swell_period ?? 0;
@@ -249,6 +286,255 @@ function buildReasons(h, s, scores, finalScore) {
   else if (finalScore >= 40) r.unshift('condição ok');
   else r.unshift('condição ruim');
   return r;
+}
+
+function buildContextMeta(h, s, ctx) {
+  const P = Number(ctx?.power_kwm) || 0;
+  const H = Number(ctx?.Hs) || 0;
+  const v = Number(h?.wind_speed) || 0;
+  const T = Number(h?.swell_period) || 0;
+  const swellDir = Number(h?.swell_direction) || 0;
+  const windDir = Number(h?.wind_direction) || 0;
+  const lbl = String(ctx?.label || '');
+  const onshore = !!ctx?.onshoreInfo?.isOnshore;
+  
+  // Análise específica por spot
+  const analysis = analyzeSpotConditions(h, s, { P, H, v, T, swellDir, windDir, onshore });
+  
+  const result = {
+    context: analysis.context,
+    advice: analysis.advice,
+    flags: {
+      board: analysis.board,
+      score: undefined,
+      score10: undefined,
+      swellAlignment: analysis.swellAlignment,
+      windCondition: analysis.windCondition,
+      periodQuality: analysis.periodQuality
+    }
+  };
+  
+  return result;
+}
+
+function analyzeSpotConditions(h, s, params) {
+  const { P, H, v, T, swellDir, windDir, onshore } = params;
+  const spotId = s?.id;
+  const spotType = s?.bottomType;
+  const spotAzimuth = s?.beachAzimuth;
+  
+  let context = '';
+  let advice = '';
+  let board = 'short';
+  let swellAlignment = '';
+  let windCondition = '';
+  let periodQuality = '';
+  
+  // Análise de período
+  if (T < 10) periodQuality = 'curto';
+  else if (T < 14) periodQuality = 'médio';
+  else periodQuality = 'longo';
+  
+  // Análise de alinhamento do swell
+  const swellDiff = angDiff(swellDir, spotAzimuth);
+  if (swellDiff < 30) swellAlignment = 'ideal';
+  else if (swellDiff < 60) swellAlignment = 'bom';
+  else swellAlignment = 'ruim';
+  
+  // Análise de condição do vento
+  if (onshore) windCondition = 'onshore';
+  else if (angDiff(windDir, spotAzimuth) < 90) windCondition = 'cruzado';
+  else windCondition = 'offshore';
+  
+  // Análise específica por tipo de spot
+  switch (spotType) {
+    case 'point':
+      // Análise para point breaks
+      if (P < 3.0 && H < 0.8) {
+        advice = 'Mar pequeno e fraco; brincadeira para LONGBOARD.';
+        context = 'Baixa energia e altura abaixo de 0.8 m';
+        board = 'long';
+      } else if (P < 4.0 && H < 1.0) {
+        advice = 'Regular; precisa de mais remada.';
+        context = 'Energia moderada e altura abaixo de 1.0 m';
+        board = 'remada';
+      } else if (P >= 4.0 && H >= 1.0 && !onshore) {
+        advice = 'Boas ondas; Dia de pranchinha';
+        context = 'Energia e altura suficientes com vento favorável';
+        board = 'short';
+      }
+      break;
+    case 'reef':
+      // Análise para reef breaks
+      if (P < 3.0 && H < 0.8) {
+        advice = 'Mar pequeno e fraco; brincadeira para LONGBOARD.';
+        context = 'Baixa energia e altura abaixo de 0.8 m';
+        board = 'long';
+      } else if (P < 4.0 && H < 1.0) {
+        advice = 'Regular; precisa de mais remada.';
+        context = 'Energia moderada e altura abaixo de 1.0 m';
+        board = 'remada';
+      } else if (P >= 4.0 && H >= 1.0 && !onshore) {
+        advice = 'Boas ondas; Dia de pranchinha';
+        context = 'Energia e altura suficientes com vento favorável';
+        board = 'short';
+      }
+      break;
+    default:
+      // Verificar se é um dos picos com lógica de long/short
+      const spotsWithLongShortLogic = ['sape', 'lagoinha', 'pereque_acu'];
+      const hasLongShortLogic = spotsWithLongShortLogic.includes(spotId);
+      
+      if (hasLongShortLogic) {
+        // Análise realista para beach breaks baseada na experiência do usuário
+        
+        // 1. Mar muito pequeno (< 0.7m)
+        if (H < 0.7) {
+          if (H < 0.4) {
+            advice = 'Mar muito pequeno; nem vale molhar o pé';
+            context = 'Altura insuficiente para surf';
+            board = 'long';
+          } else if (T >= 12) {
+            advice = 'Meio metrinho maroleiro, mas período bom - longboard vai';
+            context = 'Mar pequeno mas período favorável';
+            board = 'long';
+          } else if (T < 8) {
+            advice = 'Meio metrinho gordinho - brincadeira de longboard';
+            context = 'Mar pequeno com período curto';
+            board = 'long';
+          } else {
+            advice = 'Meio metrinho maroleiro, mas divertido - longboard';
+            context = 'Mar pequeno mas surfável';
+            board = 'long';
+          }
+        }
+        
+        // 2. Faixa mista (0.7m - 1.0m) - LONG + SHORT funcionam
+        else if (H >= 0.7 && H < 1.0) {
+          if (windCondition === 'offshore' || (v <= 2)) {
+            if (T >= 10) {
+              advice = 'Mar regular com terral - long e short funcionam, escolhe tua vibe';
+              context = 'Condições limpas e período bom';
+              board = 'long+short';
+            } else {
+              advice = 'Mar liso, mas período curto - long mais garantido';
+              context = 'Vento favorável mas período limitado';
+              board = 'long';
+            }
+          } else if (P < 3.0) {
+            advice = 'Pranchinha vai, mas vai suar na remada - pouca força no mar';
+            context = 'Altura boa mas energia baixa';
+            board = 'short';
+          } else if (P >= 4.0) {
+            advice = 'Mar regular, parede abrindo - pranchinha flui bem';
+            context = 'Boa energia empurrando as ondas';
+            board = 'short';
+          } else if (onshore && v > 8) {
+            advice = 'Onshore mexendo, mas ainda dá pra brincar - long segura melhor';
+            context = 'Vento onshore prejudicando a formação';
+            board = 'long';
+          } else {
+            advice = 'Long mais garantido, mas short também rola';
+            context = 'Condições intermediárias';
+            board = 'long+short';
+          }
+        }
+        
+        // 3. Um metrão (≥ 1.0m) - Dia de pranchinha
+        else if (H >= 1.0) {
+          if (H > 2.0) {
+            if (P >= 8.0) {
+              advice = 'Mar grande e forte - só para os experientes';
+              context = 'Ondas grandes com muita energia';
+              board = 'short';
+            } else {
+              advice = 'Mar grande mas sem pressão - cuidado com as séries';
+              context = 'Ondas grandes mas energia moderada';
+              board = 'short';
+            }
+          } else if (windCondition === 'offshore' || v <= 2) {
+            if (T >= 14) {
+              advice = 'Um metrão com pressão e terral - só alegria!';
+              context = 'Swell encorpado com vento offshore';
+              board = 'short';
+            } else if (T >= 10) {
+              advice = 'Mar liso, parede abrindo - clássico de fim de tarde';
+              context = 'Condições limpas com bom período';
+              board = 'short';
+            } else {
+              advice = 'Um metrão lisinho, mas período curto - vai nessa!';
+              context = 'Mar limpo mas ondas rápidas';
+              board = 'short';
+            }
+          } else if (onshore && v > 12) {
+            advice = 'Um metrão mexido - mar bagunçado pelo onshore';
+            context = 'Vento onshore forte prejudicando';
+            board = 'short';
+          } else if (P < 3.0) {
+            advice = 'Um metro sem pressão - pranchinha vai, mas sem empurrar';
+            context = 'Altura boa mas pouca energia';
+            board = 'short';
+          } else {
+            advice = 'Um metrão, mar com pressão e parede - dia clássico de pranchinha';
+            context = 'Condições ideais para shortboard';
+            board = 'short';
+          }
+        }
+      } else {
+        // Lógica apenas para shortboard - outros picos
+        board = 'short';
+        
+        if (H < 0.5) {
+          advice = 'Mar muito pequeno; aguarde condições melhores';
+          context = 'Altura insuficiente para surf';
+        } else if (H < 0.8) {
+          if (T >= 12) {
+            advice = 'Mar pequeno, mas período bom - pranchinha vai com paciência';
+            context = 'Mar pequeno mas período favorável';
+          } else {
+            advice = 'Mar pequeno e rápido - sessão técnica';
+            context = 'Mar pequeno com período curto';
+          }
+        } else if (H >= 0.8 && H < 1.2) {
+          if (windCondition === 'offshore' || v <= 2) {
+            advice = 'Mar regular com condições limpas - boa sessão';
+            context = 'Altura adequada e vento favorável';
+          } else if (P < 3.0) {
+            advice = 'Altura boa, mas pouca força - vai precisar remar mais';
+            context = 'Altura adequada mas energia baixa';
+          } else {
+            advice = 'Mar regular funcionando - pranchinha atende bem';
+            context = 'Condições adequadas para surf';
+          }
+        } else if (H >= 1.2) {
+          if (H > 2.0) {
+            advice = 'Mar grande - só para surfistas experientes';
+            context = 'Ondas grandes exigindo experiência';
+          } else if (windCondition === 'offshore' || v <= 2) {
+            if (T >= 12) {
+              advice = 'Um metrão com força e organização - sessão épica!';
+              context = 'Condições ideais com bom período';
+            } else {
+              advice = 'Um metrão limpo, mas rápido - vai nessa!';
+              context = 'Mar limpo mas ondas rápidas';
+            }
+          } else if (onshore && v > 12) {
+            advice = 'Mar forte, mas onshore bagunçando';
+            context = 'Vento onshore prejudicando a formação';
+          } else {
+            advice = 'Um metrão funcionando - dia de pranchinha';
+            context = 'Condições boas para shortboard';
+          }
+        }
+      }
+  }
+  
+  if (onshore && v > 10) {
+    advice = 'Onshore presente; formação prejudicada.';
+    context = `Vento onshore ${v.toFixed(0)} km/h`;
+  }
+  
+  return { context, advice, board, swellAlignment, windCondition, periodQuality };
 }
 
 export function movingAverage(arr, window = 3) {
