@@ -11,18 +11,10 @@ window.addEventListener('beforeinstallprompt', (e: Event) => {
   });
 });
 
-// Log quando o SW ficar pronto/ativo controlando a página
+// Logs simples do service worker já gerenciado pelo Vite PWA (sem reload forçado)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.ready.then(reg => {
-    console.log('[PWA] serviceWorker.ready', reg?.active?.scriptURL);
-  });
-  let reloading = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    console.log('[PWA] controllerchange - nova versão do SW controlando a página');
-    if (reloading) return;
-    reloading = true;
-    // Força refresh para carregar assets novos imediatamente
-    window.location.reload();
+    // console.log('[PWA] serviceWorker.ready', reg?.active?.scriptURL);
   });
 }
 

@@ -19,8 +19,9 @@ export default defineConfig(({ mode }) => ({
       filename: 'sw.js',
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        skipWaiting: true,
-        clientsClaim: true,
+        importScripts: ['firebase-messaging-sw.js'],
+        skipWaiting: false,
+        clientsClaim: false,
       },
       manifest: {
         name: 'SurfCheck',

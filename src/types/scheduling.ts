@@ -14,6 +14,27 @@ export interface NotificationSettings {
   advance_hours: number; // horas de antecedência
   daily_summary: boolean; // resumo diário às 8h
   special_alerts: boolean; // alertas para score > 90
+  fixed_time?: string | null; // HH:mm
+  timezone?: string; // IANA timezone, ex: 'America/Sao_Paulo'
+}
+
+// Estrutura para armazenar dados do forecast do próximo dia
+export interface NextDayForecast {
+  best_window: {
+    time: string; // "07:00"
+    date: string; // "2024-11-11"
+    score: number; // 85
+    swell_height: number; // 1.8
+    swell_direction: number; // 135 (graus)
+    swell_direction_text: string; // "SE"
+    swell_period: number; // 12
+    wind_speed: number; // 15
+    wind_direction: number; // 225 (graus)
+    energy_joules: number; // 4.2
+    power_kwm: number; // 4.2
+    conditions_summary: string; // "boas condições de manhã"
+  };
+  updated_at: string; // ISO timestamp
 }
 
 export interface Scheduling {
@@ -25,10 +46,11 @@ export interface Scheduling {
   updated_at: string;
   preferences: SchedulingPreferences;
   notifications: NotificationSettings;
+  next_day_forecast?: NextDayForecast; // Dados do melhor horário do próximo dia
   spot?: Spot; // Dados do pico (quando enriquecido)
 }
 
-export type TimeWindow = 'morning' | 'midday' | 'afternoon' | 'evening';
+export type TimeWindow = 'morning' | 'midday' | 'afternoon';
 
 export interface TimeWindowConfig {
   id: TimeWindow;

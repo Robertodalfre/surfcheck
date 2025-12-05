@@ -85,8 +85,8 @@ const Index = () => {
           setFull(resFull);
           // Logs do payload bruto do backend (compact + full)
           try {
-            console.log('[FRONT] compact.current', res?.current);
-            console.log('[FRONT] full.hours[0..3]', (resFull?.hours || []).slice(0, 4));
+            // console.log('[FRONT] compact.current', res?.current);
+            // console.log('[FRONT] full.hours[0..3]', (resFull?.hours || []).slice(0, 4));
           } catch {}
         }
       } catch (e: any) {

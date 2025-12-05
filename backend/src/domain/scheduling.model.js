@@ -3,6 +3,8 @@ import { getFirestore, FirestoreUtils } from '../services/firebase.service.js';
 import { ensureCollectionsExist } from '../services/firestore-init.service.js';
 import logger from '../utils/logger.js';
 import { getSpotById } from './spots.model.js';
+import { analyzeWindows } from '../services/window-analysis.service.js';
+import { extractNextDayForecast } from '../services/forecast-extraction.service.js';
 
 const COLLECTION_NAME = 'schedulings';
 
@@ -53,6 +55,27 @@ export async function createScheduling(data) {
       created_at: new Date(),
       updated_at: new Date()
     };
+
+    // Analisar janelas e extrair forecast do próximo dia
+    try {
+      const analysis = await analyzeWindows(scheduling);
+      const nextDayForecast = extractNextDayForecast(analysis);
+      
+      if (nextDayForecast) {
+        scheduling.next_day_forecast = nextDayForecast;
+        logger.info({
+          scheduling_id: scheduling.id,
+          best_time: nextDayForecast.best_window.time,
+          score: nextDayForecast.best_window.score
+        }, 'next day forecast calculated for new scheduling');
+      }
+    } catch (forecastError) {
+      logger.warn({
+        scheduling_id: scheduling.id,
+        error: forecastError.message
+      }, 'failed to calculate next day forecast for new scheduling');
+      // Continuar mesmo se o forecast falhar
+    }
 
     // Salvar no Firestore
     await db.collection(COLLECTION_NAME).doc(scheduling.id).set({
@@ -332,6 +355,8 @@ function validateNotifications(notifications) {
     advance_hours: 1,
     daily_summary: false,
     special_alerts: true,
+    fixed_time: null,
+    timezone: 'America/Sao_Paulo',
     ...notifications
   };
 
@@ -344,6 +369,18 @@ function validateNotifications(notifications) {
     validated.advance_hours = 1;
   }
 
+  // fixed_time deve ser string HH:mm ou null
+  if (validated.fixed_time !== null) {
+    if (typeof validated.fixed_time !== 'string' || !/^\d{2}:\d{2}$/.test(validated.fixed_time)) {
+      validated.fixed_time = null;
+    }
+  }
+
+  // timezone deve ser string IANA válida (fallback simples)
+  if (typeof validated.timezone !== 'string' || validated.timezone.length < 3) {
+    validated.timezone = 'America/Sao_Paulo';
+  }
+
   return validated;
 }
 
@@ -353,7 +390,7 @@ function validateNotifications(notifications) {
  * @returns {Array} Janelas válidas
  */
 export function validateTimeWindows(timeWindows) {
-  const validWindows = ['morning', 'midday', 'afternoon', 'evening'];
+  const validWindows = ['morning', 'midday', 'afternoon'];
   return timeWindows.filter(tw => validWindows.includes(tw));
 }
 
@@ -375,4 +412,92 @@ export function validateSurfStyle(surfStyles) {
 export function validateWindPreference(windPreferences) {
   const validPreferences = ['offshore', 'light', 'any'];
   return windPreferences.filter(pref => validPreferences.includes(pref));
+}
+
+/**
+ * Atualiza o forecast do próximo dia para um agendamento específico
+ * @param {string} schedulingId - ID do agendamento
+ * @returns {Promise<Object|null>} Forecast atualizado ou null
+ */
+export async function updateNextDayForecast(schedulingId) {
+  try {
+    const scheduling = await getSchedulingById(schedulingId);
+    if (!scheduling || !scheduling.active) {
+      return null;
+    }
+
+    // Analisar janelas e extrair novo forecast
+    const analysis = await analyzeWindows(scheduling);
+    const nextDayForecast = extractNextDayForecast(analysis);
+    
+    if (!nextDayForecast) {
+      logger.warn({ scheduling_id: schedulingId }, 'no forecast data available for update');
+      return null;
+    }
+
+    // Atualizar no Firestore
+    const db = getFirestore();
+    await db.collection(COLLECTION_NAME).doc(schedulingId).update({
+      next_day_forecast: nextDayForecast,
+      updated_at: FirestoreUtils.dateToTimestamp(new Date())
+    });
+
+    logger.info({
+      scheduling_id: schedulingId,
+      best_time: nextDayForecast.best_window.time,
+      score: nextDayForecast.best_window.score
+    }, 'next day forecast updated');
+
+    return nextDayForecast;
+  } catch (error) {
+    logger.error({
+      error: error.message,
+      scheduling_id: schedulingId
+    }, 'failed to update next day forecast');
+    return null;
+  }
+}
+
+/**
+ * Atualiza o forecast do próximo dia para todos os agendamentos ativos
+ * @returns {Promise<Array>} Lista de resultados da atualização
+ */
+export async function updateAllNextDayForecasts() {
+  try {
+    const activeSchedulings = await getActiveSchedulings();
+    const results = [];
+
+    logger.info({ 
+      total_schedulings: activeSchedulings.length 
+    }, 'starting bulk forecast update');
+
+    for (const scheduling of activeSchedulings) {
+      try {
+        const forecast = await updateNextDayForecast(scheduling.id);
+        results.push({
+          scheduling_id: scheduling.id,
+          success: !!forecast,
+          forecast
+        });
+      } catch (error) {
+        results.push({
+          scheduling_id: scheduling.id,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    logger.info({
+      total: results.length,
+      success: successCount,
+      failed: results.length - successCount
+    }, 'bulk forecast update completed');
+
+    return results;
+  } catch (error) {
+    logger.error({ error: error.message }, 'failed to update all forecasts');
+    return [];
+  }
 }

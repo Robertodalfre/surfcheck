@@ -25,8 +25,7 @@ interface SchedulingCardProps {
 const TIME_WINDOW_LABELS = {
   morning: { label: 'Manhã', icon: '🌅' },
   midday: { label: 'Meio-dia', icon: '☀️' },
-  afternoon: { label: 'Tarde', icon: '🌇' },
-  evening: { label: 'Final do dia', icon: '🌙' }
+  afternoon: { label: 'Tarde', icon: '🌇' }
 };
 
 const SURF_STYLE_LABELS = {
@@ -52,6 +51,7 @@ export default function SchedulingCard({
   const [isToggling, setIsToggling] = useState(false);
   const [windowAnalysis, setWindowAnalysis] = useState<any>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [showAllWindows, setShowAllWindows] = useState(false);
 
   // Carregar análise de janelas quando agendamento estiver ativo
   useEffect(() => {
@@ -69,12 +69,18 @@ export default function SchedulingCard({
         }
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        setWindowAnalysis(data.preview);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
+
+      const data = await response.json();
+
+      // A API de preview retorna diretamente o objeto de análise (windows, next_good_windows, status...)
+      // então usamos o próprio "data" como windowAnalysis
+      setWindowAnalysis(data);
     } catch (error) {
       console.error('Erro ao carregar análise:', error);
+      setWindowAnalysis(null);
     } finally {
       setAnalysisLoading(false);
     }
@@ -259,53 +265,72 @@ export default function SchedulingCard({
                     {windowAnalysis.windows?.length || 0} encontradas
                   </Badge>
                 </div>
-                
+
                 {windowAnalysis.windows && windowAnalysis.windows.length > 0 ? (
                   <div className="space-y-2">
-                    {windowAnalysis.windows.slice(0, 2).map((window: any, index: number) => (
-                      <div key={index} className="text-xs bg-background/50 rounded p-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">
-                            {new Date(window.start).toLocaleDateString('pt-BR', { 
-                              weekday: 'short', 
-                              day: '2-digit', 
-                              month: '2-digit' 
-                            })} às {new Date(window.start).toLocaleTimeString('pt-BR', { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
-                          </span>
-                          <Badge variant="secondary" className="text-xs">
-                            {window.quality_rating}
-                          </Badge>
+                    {(showAllWindows
+                      ? windowAnalysis.windows
+                      : windowAnalysis.windows.slice(0, 2)
+                    ).map((window: any, index: number) => {
+                      const startDate = window.best_hour?.time
+                        ? new Date(window.best_hour.time)
+                        : new Date(window.start);
+
+                      return (
+                        <div key={index} className="text-xs bg-background/50 rounded p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium">
+                              {startDate.toLocaleDateString('pt-BR', {
+                                weekday: 'short',
+                                day: '2-digit',
+                                month: '2-digit'
+                              })}{' '}
+                              às{' '}
+                              {startDate.toLocaleTimeString('pt-BR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              {window.quality_rating}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground">
+                            {window.description}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="inline-flex items-center gap-1">
+                              <TrendingUp className="h-3 w-3" />
+                              {Math.round(window.avg_score)}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {window.duration_hours}h
+                            </span>
+                          </div>
                         </div>
-                        <p className="text-muted-foreground">
-                          {window.description}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="inline-flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" />
-                            {Math.round(window.avg_score)}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {window.duration_hours}h
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    
+                      );
+                    })}
+
                     {windowAnalysis.windows.length > 2 && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        +{windowAnalysis.windows.length - 2} janelas adicionais
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllWindows(prev => !prev)}
+                        className="block w-full text-xs text-muted-foreground text-center mt-1 underline hover:no-underline"
+                      >
+                        {showAllWindows
+                          ? 'Ocultar janelas adicionais'
+                          : `+${windowAnalysis.windows.length - 2} janelas adicionais`}
+                      </button>
                     )}
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <Waves className="h-3 w-3" />
-                      <span>Nenhuma janela boa encontrada nos próximos {scheduling.preferences.days_ahead} dias</span>
+                      <span>
+                        Nenhuma janela boa encontrada nos próximos {scheduling.preferences.days_ahead} dias
+                      </span>
                     </span>
                     <p className="mt-1">
                       Tente ajustar suas preferências para encontrar mais oportunidades
@@ -318,7 +343,7 @@ export default function SchedulingCard({
                 <span className="inline-flex items-center gap-1">
                   ❌ <span>Erro ao carregar análise</span>
                 </span>
-                <button 
+                <button
                   onClick={loadWindowAnalysis}
                   className="text-xs underline ml-2 hover:no-underline"
                 >

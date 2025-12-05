@@ -26,6 +26,9 @@ const SpotSchema = z.object({
   idealApproach: SectorSchema,
   shadowBlocks: z.array(SectorSchema).optional().default([]),
   localNotes: z.string().optional().default(''),
+  // Novos campos (opcionais) para agrupamento regional
+  region: z.string().optional(),
+  regionName: z.string().optional()
 });
 
 let spots = [];
@@ -37,7 +40,43 @@ function loadSpots() {
   if (!parsed.success) {
     throw new Error('Invalid spots.json: ' + parsed.error.message);
   }
-  spots = parsed.data;
+  const baseSpots = parsed.data;
+
+  // Mapear regiões por ID de pico (fallback quando JSON não tiver region)
+  const regionMap = {
+    // Ubatuba (SP)
+    ubatuba: {
+      name: 'Ubatuba (SP)',
+      ids: ['sape','lagoinha','itamambuca','vermelha_norte','toninhas','vermelha_centro','enseada','grande','felix','domingas_dias']
+    },
+    // São Sebastião (SP)
+    sao_sebastiao: {
+      name: 'São Sebastião (SP)',
+      ids: ['maresias','barra_sahy','camburi','boiçucanga']
+    },
+    // Florianópolis (SC)
+    florianopolis: {
+      name: 'Florianópolis (SC)',
+      ids: ['joaquina','mole','barra_lagoa','campeche','armacao']
+    },
+    // Rio de Janeiro (RJ)
+    rio_de_janeiro: {
+      name: 'Rio de Janeiro (RJ)',
+      ids: ['recreio','barra_tijuca','ipanema','copacabana','prainha','grumari']
+    }
+  };
+
+  const idToRegion = new Map();
+  for (const [key, def] of Object.entries(regionMap)) {
+    def.ids.forEach((id) => idToRegion.set(id, { region: key, regionName: def.name }));
+  }
+
+  spots = baseSpots.map((s) => {
+    // Se já vier com region no JSON, manter; senão, atribuir por mapping
+    if (s.region && s.regionName) return s;
+    const reg = idToRegion.get(s.id);
+    return reg ? { ...s, region: reg.region, regionName: reg.regionName } : s;
+  });
 }
 
 loadSpots();
@@ -48,4 +87,16 @@ export function getAllSpots() {
 
 export function getSpotById(id) {
   return spots.find((s) => s.id === id);
+}
+
+export function getRegions() {
+  const set = new Map();
+  for (const s of spots) {
+    if (s.region) set.set(s.region, s.regionName || s.region);
+  }
+  return Array.from(set.entries()).map(([id, name]) => ({ id, name }));
+}
+
+export function getSpotsByRegion(regionId) {
+  return spots.filter((s) => s.region === regionId);
 }

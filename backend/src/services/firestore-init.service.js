@@ -20,6 +20,37 @@ async function collectionExists(db, collectionName) {
     logger.warn({ error: error.message, collection: collectionName }, 'error checking collection existence');
     return false;
   }
+
+/**
+ * Cria documento inicial na coleção user_devices (tokens de push por usuário)
+ */
+async function initUserDevicesCollection(db) {
+  try {
+    logger.info('📝 Criando coleção "user_devices"...');
+
+    const ref = db.collection('user_devices').doc('_init_document');
+    await ref.set({
+      _type: 'init_document',
+      message: 'Documento inicial para criar a coleção user_devices',
+      createdAt: admin.firestore.Timestamp.now(),
+      source: 'auto-init-service',
+      temporary: true,
+      // Estrutura de exemplo para referência
+      example_structure: {
+        uid: 'string - ID do usuário',
+        tokens: 'array - tokens FCM registrados',
+        platform: 'string - ios | android | web',
+        updated_at: 'timestamp'
+      }
+    });
+
+    logger.info('✅ Coleção "user_devices" criada com sucesso!');
+    return true;
+  } catch (error) {
+    logger.error({ error: error.message }, 'failed to create user_devices collection');
+    return false;
+  }
+}
 }
 
 /**
@@ -162,7 +193,8 @@ export async function ensureCollectionsExist() {
     const collections = [
       { name: 'schedulings', initFn: initSchedulingsCollection },
       { name: 'analytics', initFn: initAnalyticsCollection },
-      { name: 'window_history', initFn: initWindowHistoryCollection }
+      { name: 'window_history', initFn: initWindowHistoryCollection },
+      { name: 'user_devices', initFn: initUserDevicesCollection }
     ];
 
     let createdCount = 0;

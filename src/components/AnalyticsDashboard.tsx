@@ -372,10 +372,10 @@ export default function AnalyticsDashboard() {
           <RefreshCw className="h-4 w-4 mr-2" />
           Atualizar
         </Button>
-        <Button onClick={seedTestData} disabled={loading} variant="outline">
+        {/* <Button onClick={seedTestData} disabled={loading} variant="outline">
           <Calendar className="h-4 w-4 mr-2" />
           Dados de Teste
-        </Button>
+        </Button> */}
       </div>
     </div>
   );

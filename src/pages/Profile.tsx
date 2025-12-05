@@ -3,16 +3,21 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { Plus, Waves, Settings } from "lucide-react";
-import { useScheduling } from "@/hooks/useScheduling";
-import { getSpots, SpotMeta } from "@/lib/api";
-import SchedulingConfig from "@/components/SchedulingConfig";
-import SchedulingCard from "@/components/SchedulingCard";
+import { useScheduling } from '@/hooks/useScheduling';
+import { useSpots } from '../hooks/useSpots';
+import { useMultiScheduling } from '@/hooks/useMultiScheduling';
+import SchedulingConfig from '@/components/SchedulingConfig';
+import MultiSchedulingConfig from '@/components/MultiSchedulingConfig';
+import SchedulingCard from '@/components/SchedulingCard';
+import MultiSchedulingCard from '@/components/MultiSchedulingCard';
 import NotificationTester from "@/components/NotificationTester";
 import AnalyticsDashboard from "@/components/AnalyticsDashboard";
-import { Scheduling } from "@/types/scheduling";
+import { Scheduling, CreateSchedulingRequest } from "@/types/scheduling";
+import { registerWebPushToken } from "@/lib/messaging";
 import { useToast } from "@/hooks/use-toast";
 
 const getUserInitials = (displayName?: string | null) => {
@@ -31,51 +36,41 @@ const Profile = () => {
   const { toast } = useToast();
   
   // Estados para agendamentos
-  const {
-    schedulings,
-    loading: schedulingLoading,
-    error: schedulingError,
-    createScheduling,
-    updateScheduling,
-    deleteScheduling,
-    toggleScheduling
-  } = useScheduling();
+  const { schedulings, loading: schedulingLoading, error: schedulingError, createScheduling, updateScheduling, deleteScheduling, toggleScheduling } = useScheduling();
+  const { multiSchedulings, loading: multiSchedulingLoading, error: multiSchedulingError, createMultiScheduling, toggleMultiScheduling, deleteMultiScheduling } = useMultiScheduling();
+  const { spots, loading: spotsLoading, error: spotsError } = useSpots();
   
   // Estados da interface
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateMultiForm, setShowCreateMultiForm] = useState(false);
   const [editingScheduling, setEditingScheduling] = useState<Scheduling | null>(null);
-  const [spots, setSpots] = useState<SpotMeta[]>([]);
-  const [spotsLoading, setSpotsLoading] = useState(true);
 
-  // Carregar spots
+  // Registrar token de push notification
   useEffect(() => {
-    const loadSpots = async () => {
-      try {
-        const data = await getSpots();
-        setSpots(data.spots || []);
-      } catch (error) {
-        console.error('Erro ao carregar spots:', error);
-        toast({
-          title: "Erro",
-          description: "Não foi possível carregar os picos",
-          variant: "destructive"
-        });
-      } finally {
-        setSpotsLoading(false);
-      }
-    };
-    
-    loadSpots();
-  }, [toast]);
+    if (user?.uid) {
+      registerWebPushToken(user.uid).catch(console.error);
+    }
+  }, [user?.uid]);
   
   // Handlers para agendamentos
-  const handleCreateScheduling = async (data: any) => {
+  const handleCreateScheduling = async (data: CreateSchedulingRequest) => {
     const result = await createScheduling(data);
     if (result) {
       setShowCreateForm(false);
       toast({
         title: "Sucesso!",
         description: `Agendamento criado para ${result.spot?.name}`
+      });
+    }
+  };
+
+  const handleCreateMultiScheduling = async (data: any) => {
+    const result = await createMultiScheduling(data);
+    if (result) {
+      setShowCreateMultiForm(false);
+      toast({
+        title: "Sucesso!",
+        description: `Agendamento criado para ${result.regionName}`
       });
     }
   };
@@ -134,10 +129,10 @@ const Profile = () => {
                 <div className="flex flex-wrap gap-2 mt-4 justify-center md:justify-start">
                   <Badge variant="secondary" className="flex items-center gap-1">
                     <Waves className="h-3 w-3" />
-                    {schedulings.filter(s => s.active).length} agendamentos ativos
+                    {schedulings.filter(s => s.active).length + multiSchedulings.filter(s => s.active).length} agendamentos ativos
                   </Badge>
                   <Badge variant="outline">
-                    {schedulings.length} total
+                    {schedulings.length + multiSchedulings.length} total
                   </Badge>
                 </div>
               </div>
@@ -170,41 +165,59 @@ const Profile = () => {
               </p>
             </div>
             
-            {!showCreateForm && !editingScheduling && (
-              <Button onClick={() => setShowCreateForm(true)} className="flex items-center gap-2">
-                <Plus className="h-4 w-4" />
-                Novo Agendamento
-              </Button>
+            {!showCreateForm && !showCreateMultiForm && !editingScheduling && (
+              <div className="flex gap-2">
+                <Button onClick={() => setShowCreateForm(true)} variant="outline" className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  Pico Individual
+                </Button>
+                <Button onClick={() => setShowCreateMultiForm(true)} className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  Região Multi-Pico
+                </Button>
+              </div>
             )}
           </div>
 
-          {/* Formulário de Criação */}
-          {showCreateForm && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Criar Novo Agendamento</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {spotsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-ocean-primary"></div>
-                  </div>
-                ) : (
-                  <SchedulingConfig
-                    spots={spots}
-                    onSubmit={handleCreateScheduling}
-                    onCancel={() => setShowCreateForm(false)}
-                    loading={schedulingLoading}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          )}
+          {/* Modal de Criação Individual */}
+          <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto z-[9999]">
+              <DialogHeader>
+                <DialogTitle>Criar Agendamento Individual</DialogTitle>
+              </DialogHeader>
+              {spotsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-ocean-primary"></div>
+                </div>
+              ) : (
+                <SchedulingConfig
+                  spots={spots}
+                  onSubmit={handleCreateScheduling}
+                  onCancel={() => setShowCreateForm(false)}
+                  loading={schedulingLoading}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal de Criação Multi-Pico */}
+          <Dialog open={showCreateMultiForm} onOpenChange={setShowCreateMultiForm}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto z-[9999]">
+              <DialogHeader>
+                <DialogTitle>Criar Agendamento Regional (Multi-Pico)</DialogTitle>
+              </DialogHeader>
+              <MultiSchedulingConfig
+                onSubmit={handleCreateMultiScheduling}
+                onCancel={() => setShowCreateMultiForm(false)}
+                loading={multiSchedulingLoading}
+              />
+            </DialogContent>
+          </Dialog>
 
           {/* Lista de Agendamentos */}
-          {!showCreateForm && !editingScheduling && (
+          {!showCreateForm && !showCreateMultiForm && !editingScheduling && (
             <div className="space-y-4">
-              {schedulingLoading && schedulings.length === 0 ? (
+              {(schedulingLoading || multiSchedulingLoading) && schedulings.length === 0 && multiSchedulings.length === 0 ? (
                 <Card>
                   <CardContent className="flex items-center justify-center py-12">
                     <div className="text-center">
@@ -213,7 +226,7 @@ const Profile = () => {
                     </div>
                   </CardContent>
                 </Card>
-              ) : schedulings.length === 0 ? (
+              ) : schedulings.length === 0 && multiSchedulings.length === 0 ? (
                 <Card>
                   <CardContent className="flex items-center justify-center py-12">
                     <div className="text-center">
@@ -222,34 +235,72 @@ const Profile = () => {
                       <p className="text-muted-foreground mb-4">
                         Crie seu primeiro agendamento para receber alertas personalizados
                       </p>
-                      <Button onClick={() => setShowCreateForm(true)} className="flex items-center gap-2">
-                        <Plus className="h-4 w-4" />
-                        Criar Agendamento
-                      </Button>
+                      <div className="flex gap-2 justify-center">
+                        <Button onClick={() => setShowCreateForm(true)} variant="outline" className="flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          Pico Individual
+                        </Button>
+                        <Button onClick={() => setShowCreateMultiForm(true)} className="flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          Região Multi-Pico
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid gap-4">
-                  {schedulings.map(scheduling => (
-                    <SchedulingCard
-                      key={scheduling.id}
-                      scheduling={scheduling}
-                      onToggle={handleToggleScheduling}
-                      onEdit={setEditingScheduling}
-                      onDelete={handleDeleteScheduling}
-                      loading={schedulingLoading}
-                    />
-                  ))}
+                <div className="space-y-6">
+                  {/* Agendamentos Regionais */}
+                  {multiSchedulings.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                        🗺️ Agendamentos Regionais
+                        <Badge variant="secondary">{multiSchedulings.length}</Badge>
+                      </h3>
+                      <div className="grid gap-4">
+                        {multiSchedulings.map(multiScheduling => (
+                          <MultiSchedulingCard
+                            key={multiScheduling.id}
+                            multiScheduling={multiScheduling}
+                            onToggle={toggleMultiScheduling}
+                            onDelete={deleteMultiScheduling}
+                            loading={multiSchedulingLoading}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Agendamentos Individuais */}
+                  {schedulings.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                        🏄‍♂️ Agendamentos Individuais
+                        <Badge variant="secondary">{schedulings.length}</Badge>
+                      </h3>
+                      <div className="grid gap-4">
+                        {schedulings.map(scheduling => (
+                          <SchedulingCard
+                            key={scheduling.id}
+                            scheduling={scheduling}
+                            onToggle={handleToggleScheduling}
+                            onEdit={setEditingScheduling}
+                            onDelete={handleDeleteScheduling}
+                            loading={schedulingLoading}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               
-              {schedulingError && (
+              {(schedulingError || multiSchedulingError) && (
                 <Card className="border-destructive">
                   <CardContent className="pt-6">
                     <div className="text-center text-destructive">
                       <p className="font-medium">Erro ao carregar agendamentos</p>
-                      <p className="text-sm mt-1">{schedulingError}</p>
+                      <p className="text-sm mt-1">{schedulingError || multiSchedulingError}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -259,7 +310,7 @@ const Profile = () => {
         </div>
 
         {/* Seção de Testes de Notificação */}
-        {schedulings.length > 0 && (
+        {/* {schedulings.length > 0 && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -272,10 +323,10 @@ const Profile = () => {
             
             <NotificationTester schedulings={schedulings} />
           </div>
-        )}
+        )} */}
 
         {/* Seção de Analytics */}
-        <div className="space-y-6">
+        {/* <div className="space-y-6">
           <div>
             <h2 className="text-xl font-semibold flex items-center gap-2">
               📊 Analytics & Histórico
@@ -286,7 +337,7 @@ const Profile = () => {
           </div>
           
           <AnalyticsDashboard />
-        </div>
+        </div> */}
       </div>
     </div>
   );

@@ -110,6 +110,14 @@ export async function analyzeWindows(scheduling) {
  */
 function filterHoursByPreferences(hours, preferences) {
   return hours.filter(hour => {
+    const hourOfDay = new Date(hour.time).getHours();
+
+    // Regra global: considerar apenas horas entre 06:00 e 16:00
+    // (independente das preferências de janela do usuário)
+    if (hourOfDay < 6 || hourOfDay > 16) {
+      return false;
+    }
+
     // Filtro de score mínimo
     if (hour.score < preferences.min_score) {
       return false;
@@ -122,7 +130,6 @@ function filterHoursByPreferences(hours, preferences) {
 
     // Filtro de janela de tempo
     if (preferences.time_windows && preferences.time_windows.length > 0) {
-      const hourOfDay = new Date(hour.time).getHours();
       const timeWindow = getTimeWindow(hourOfDay);
       if (!preferences.time_windows.includes(timeWindow)) {
         return false;
@@ -156,7 +163,6 @@ function getTimeWindow(hour) {
   if (hour >= 5 && hour < 9) return 'morning';
   if (hour >= 9 && hour < 14) return 'midday';
   if (hour >= 14 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 20) return 'evening';
   return 'other';
 }
 

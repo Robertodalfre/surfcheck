@@ -1,6 +1,103 @@
 import { analyzeWindows } from './window-analysis.service.js';
 import { getSchedulingById, getActiveSchedulings } from '../domain/scheduling.model.js';
+import { analyzeRegion } from './multi-spot-analysis.service.js';
+import { getFirestore } from '../services/firebase.service.js';
+import admin from 'firebase-admin';
 import logger from '../utils/logger.js';
+
+async function getUserTokens(uid) {
+  try {
+    const db = getFirestore();
+    const docRef = db.collection('user_devices').doc(uid);
+    const doc = await docRef.get();
+    if (!doc.exists) return [];
+    const data = doc.data() || {};
+    return Array.isArray(data.tokens) ? data.tokens.filter(Boolean) : [];
+  } catch (e) {
+    logger.warn({ error: e.message, uid }, 'failed to get user tokens');
+    return [];
+  }
+}
+/**
+ * Cria notificação de comparação regional (Top 3 spots)
+ * @param {Object} params
+ * @param {Object} params.multi - documento do multi_scheduling
+ * @param {Object} params.analysis - retorno de analyzeRegion
+ */
+export function createRegionComparisonNotification({ multi, analysis }) {
+  if (!analysis || analysis.status !== 'success' || !analysis.ranking?.length) return null;
+
+  const top = analysis.ranking.slice(0, 3);
+  const best = top[0];
+
+  const scoreBest = Math.round(best.avg_score || best.peak_score || 0);
+  const timeStr = best?.best_hour?.time
+    ? new Date(best.best_hour.time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '--:--';
+
+  const title = `🥇 Melhor pico agora: ${best.spot_name}`;
+  const body = `Score ${scoreBest} às ${timeStr}\n` +
+    top.map((s, i) => {
+      const sc = Math.round(s.avg_score || s.peak_score || 0);
+      const name = s.spot_name;
+      return i === 0 ? `${name}: ${sc}` : `${name}: ${sc}`;
+    }).join(' • ');
+
+  return {
+    id: `region_${multi.id}_${Date.now()}`,
+    type: 'region_comparison',
+    uid: multi.uid,
+    title,
+    body,
+    data: {
+      multi_id: multi.id,
+      region: multi.region,
+      region_name: multi.regionName,
+      best_spot: best.spot_id,
+      best_spot_name: best.spot_name,
+      ranking: top
+    },
+    priority: scoreBest >= 80 ? 'high' : 'normal',
+    created_at: new Date(),
+    scheduled_for: new Date()
+  };
+}
+
+/**
+ * Gera notificação regional para um multi-scheduling
+ */
+export async function generateRegionComparisonForMulti(multi) {
+  const analysis = await analyzeRegion({
+    regionId: multi.region,
+    preferences: multi.preferences || {},
+    onlySpots: multi.spots,
+    limit: 3
+  });
+  const notification = createRegionComparisonNotification({ multi, analysis });
+  return notification;
+}
+
+/**
+ * Processa e envia notificações regionais para todos os multi-schedulings ativos
+ */
+export async function processRegionComparisonNotifications() {
+  const db = getFirestore();
+  const snap = await db.collection('multi_schedulings').where('active', '==', true).get();
+  const results = [];
+  for (const doc of snap.docs) {
+    const multi = { id: doc.id, ...doc.data() };
+    try {
+      const n = await generateRegionComparisonForMulti(multi);
+      if (n) {
+        const ok = await sendPushNotification(n);
+        results.push({ multi_id: multi.id, ok });
+      }
+    } catch (e) {
+      results.push({ multi_id: multi.id, ok: false, error: e.message });
+    }
+  }
+  return results;
+}
 
 /**
  * Serviço de notificações inteligentes para agendamentos de surf
@@ -13,7 +110,7 @@ import logger from '../utils/logger.js';
  */
 export async function generateNotificationsForScheduling(schedulingId) {
   try {
-    const scheduling = getSchedulingById(schedulingId);
+    const scheduling = await getSchedulingById(schedulingId);
     if (!scheduling || !scheduling.active) {
       return [];
     }
@@ -34,7 +131,7 @@ export async function generateNotificationsForScheduling(schedulingId) {
 
       // Verificar se está dentro do prazo de antecedência configurado
       if (hoursUntilWindow > 0 && hoursUntilWindow <= scheduling.notifications.advance_hours) {
-        const notification = createWindowNotification(scheduling, window, analysis.spot);
+        const notification = await createWindowNotification(scheduling, window, analysis.spot);
         notifications.push(notification);
       }
 
@@ -130,34 +227,29 @@ export async function processAllNotifications() {
 }
 
 /**
- * Cria notificação para uma janela específica
- * @param {Object} scheduling - Agendamento
- * @param {Object} window - Janela de surf
+ * Cria notificação usando dados reais do next_day_forecast
+ * @param {Object} scheduling - Agendamento com next_day_forecast
  * @param {Object} spot - Dados do pico
- * @returns {Object} Notificação formatada
+ * @returns {Object} Notificação formatada com dados reais
  */
-function createWindowNotification(scheduling, window, spot) {
-  const windowStart = new Date(window.start);
-  const timeStr = windowStart.toLocaleTimeString('pt-BR', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-  const dateStr = windowStart.toLocaleDateString('pt-BR', { 
-    weekday: 'short', 
-    day: '2-digit', 
-    month: '2-digit' 
-  });
+export function createNextDayForecastNotification(scheduling, spot) {
+  if (!scheduling.next_day_forecast || !scheduling.next_day_forecast.best_window) {
+    return null;
+  }
 
-  // Personalizar mensagem baseado no estilo
+  const forecast = scheduling.next_day_forecast.best_window;
   const styleEmoji = getStyleEmoji(scheduling.preferences.surf_style);
-  const qualityEmoji = getQualityEmoji(window.avg_score);
+  const qualityEmoji = getQualityEmoji(forecast.score);
 
-  const title = `${qualityEmoji} Janela boa em ${spot.name}!`;
-  const body = `${dateStr} às ${timeStr} - ${window.description} ${styleEmoji}`;
+  // Criar título com score e condições
+  const title = `${styleEmoji} Score ${(forecast.score / 10).toFixed(1)} - ${forecast.conditions_summary} - BEST TIME ${forecast.time} hrs`;
+  
+  // Criar corpo com dados técnicos reais
+  const body = `${forecast.swell_height}m, ${forecast.swell_period}s, ${forecast.swell_direction_text} ${forecast.wind_speed}km/h - Energia: ${forecast.power_kwm.toFixed(1)} kW/m`;
 
   return {
-    id: `window_${scheduling.id}_${window.start}`,
-    type: 'window_alert',
+    id: `forecast_${scheduling.id}_${forecast.date}`,
+    type: 'next_day_forecast',
     scheduling_id: scheduling.id,
     uid: scheduling.uid,
     title,
@@ -165,12 +257,110 @@ function createWindowNotification(scheduling, window, spot) {
     data: {
       spot_id: spot.id,
       spot_name: spot.name,
-      window_start: window.start,
-      window_score: window.avg_score,
-      window_duration: window.duration_hours,
-      best_hour: window.best_hour
+      forecast_date: forecast.date,
+      best_time: forecast.time,
+      score: forecast.score,
+      swell_height: forecast.swell_height,
+      swell_direction_text: forecast.swell_direction_text,
+      swell_period: forecast.swell_period,
+      wind_speed: forecast.wind_speed,
+      power_kwm: forecast.power_kwm,
+      conditions_summary: forecast.conditions_summary
     },
-    priority: window.avg_score >= 80 ? 'high' : 'normal',
+    priority: forecast.score >= 80 ? 'high' : 'normal',
+    created_at: new Date(),
+    scheduled_for: new Date(Date.now() + 5000) // 5 segundos para teste
+  };
+}
+
+/**
+ * Cria notificação para uma janela específica usando SEMPRE o novo formato
+ * @param {Object} scheduling - Agendamento
+ * @param {Object} window - Janela de surf
+ * @param {Object} spot - Dados do pico
+ * @returns {Object} Notificação formatada
+ */
+async function createWindowNotification(scheduling, window, spot) {
+  // Tentar usar dados do next_day_forecast primeiro
+  if (scheduling.next_day_forecast) {
+    return createNextDayForecastNotification(scheduling, spot);
+  }
+
+  // Se não tem forecast salvo, criar dados na hora usando a janela atual
+  return await createNotificationFromWindow(scheduling, window, spot);
+}
+
+/**
+ * Cria notificação usando dados da janela atual (formato novo)
+ * @param {Object} scheduling - Agendamento
+ * @param {Object} window - Janela de surf
+ * @param {Object} spot - Dados do pico
+ * @returns {Object} Notificação formatada no novo padrão
+ */
+async function createNotificationFromWindow(scheduling, window, spot) {
+  const { directionToText } = await import('../utils/angles.js');
+  
+  // Extrair melhor horário da janela
+  const bestHour = window.best_hour || {
+    time: window.start,
+    score: window.avg_score || window.peak_score || 70,
+    swell_height: 1.5,
+    swell_direction: 180,
+    swell_period: 12,
+    wind_speed: 15,
+    wind_direction: 225,
+    energy_jpm2: 4.2,
+    power_kwm: 4.2
+  };
+
+  const bestTime = new Date(bestHour.time);
+  const timeStr = bestTime.toLocaleTimeString('pt-BR', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false 
+  });
+
+  // Dados da notificação no novo formato
+  const score = bestHour.score || window.avg_score || 70;
+  const swellHeight = bestHour.swell_height || 1.5;
+  const swellPeriod = bestHour.swell_period || 12;
+  const swellDirection = bestHour.swell_direction || 180;
+  const swellDirectionText = directionToText(swellDirection);
+  const windSpeed = bestHour.wind_speed || 15;
+  const powerKwm = bestHour.power_kwm || bestHour.energy_jpm2 || 4.2;
+  
+  // Gerar conditions_summary baseado no score
+  const conditionsSummary = score >= 80 ? 'boas condições' : score >= 60 ? 'condições ok' : 'condições fracas';
+  
+  const styleEmoji = getStyleEmoji(scheduling.preferences.surf_style);
+
+  // Título no novo formato
+  const title = `${styleEmoji} Score ${(score / 10).toFixed(1)} - ${conditionsSummary} - BEST TIME ${timeStr} hrs`;
+  
+  // Corpo no novo formato (SEM "offshore")
+  const body = `${swellHeight.toFixed(1)}m, ${swellPeriod}s, ${swellDirectionText} ${windSpeed}km/h - Energia: ${powerKwm.toFixed(1)} kW/m`;
+
+  return {
+    id: `forecast_${scheduling.id}_${Date.now()}`,
+    type: 'next_day_forecast_live',
+    scheduling_id: scheduling.id,
+    uid: scheduling.uid,
+    title,
+    body,
+    data: {
+      spot_id: spot.id,
+      spot_name: spot.name,
+      forecast_date: bestTime.toISOString().split('T')[0],
+      best_time: timeStr,
+      score: score,
+      swell_height: swellHeight,
+      swell_direction_text: swellDirectionText,
+      swell_period: swellPeriod,
+      wind_speed: windSpeed,
+      power_kwm: powerKwm,
+      conditions_summary: conditionsSummary
+    },
+    priority: score >= 80 ? 'high' : 'normal',
     created_at: new Date(),
     scheduled_for: new Date(Date.now() + 5000) // 5 segundos para teste
   };
@@ -308,18 +498,74 @@ function getQualityEmoji(score) {
  */
 export async function sendPushNotification(notification) {
   try {
-    // Em produção, aqui seria a integração com Firebase Cloud Messaging
-    logger.info({
-      notification_id: notification.id,
-      type: notification.type,
-      uid: notification.uid,
-      title: notification.title
-    }, 'push notification sent (simulated)');
+    const tokens = await getUserTokens(notification.uid);
+    if (!tokens.length) {
+      logger.info({ uid: notification.uid }, 'no device tokens found, skipping push');
+      return false;
+    }
 
-    // Simular delay de rede
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    return true;
+    const data = {};
+    if (notification.data) {
+      for (const [k, v] of Object.entries(notification.data)) {
+        data[k] = typeof v === 'string' ? v : JSON.stringify(v);
+      }
+    }
+
+    const message = {
+      tokens,
+      notification: {
+        title: notification.title,
+        body: notification.body
+      },
+      data,
+      webpush: {
+        notification: {
+          title: notification.title,
+          body: notification.body,
+          icon: '/pwa-192x192.png',
+          badge: '/pwa-192x192.png'
+        },
+        fcmOptions: {
+          link: 'https://surfcheck.com.br/'
+        }
+      }
+    };
+
+    logger.info({ uid: notification.uid, tokens_count: tokens.length }, 'sending fcm multicast');
+    const response = await admin.messaging().sendEachForMulticast(message);
+    logger.info({ successCount: response.successCount, failureCount: response.failureCount, uid: notification.uid }, 'fcm send result');
+
+    // Limpeza de tokens inválidos
+    if (response.failureCount > 0) {
+      const invalidIdx = [];
+      response.responses.forEach((r, idx) => {
+        if (!r.success) {
+          const code = r.error?.code || '';
+          if (
+            code.includes('registration-token-not-registered') ||
+            code.includes('invalid-registration-token')
+          ) {
+            invalidIdx.push(idx);
+          }
+        }
+      });
+      if (invalidIdx.length) {
+        try {
+          const toRemove = new Set(invalidIdx.map(i => tokens[i]));
+          const db = getFirestore();
+          const ref = db.collection('user_devices').doc(notification.uid);
+          const snap = await ref.get();
+          const existing = snap.exists ? (snap.data().tokens || []) : [];
+          const filtered = existing.filter((t) => !toRemove.has(t));
+          await ref.set({ tokens: filtered, updated_at: new Date() }, { merge: true });
+          logger.info({ removed: toRemove.size }, 'cleaned invalid fcm tokens');
+        } catch (e) {
+          logger.warn({ error: (e && e.message) || String(e) }, 'failed to cleanup invalid tokens');
+        }
+      }
+    }
+
+    return response.successCount > 0;
   } catch (error) {
     logger.error({ 
       error: error.message, 
@@ -363,4 +609,100 @@ export function scheduleNotificationProcessing(intervalMinutes = 30) {
     clearInterval(intervalId);
     logger.info('notification processing stopped');
   };
+}
+
+export async function processFixedTimeNotifications(testTime = null) {
+  try {
+    const schedulings = await getActiveSchedulings();
+    const now = new Date();
+    const results = [];
+
+    for (const s of schedulings) {
+      const fixed = s.notifications && s.notifications.fixed_time;
+      if (!fixed) continue;
+      const tz = (s.notifications && s.notifications.timezone) || 'America/Sao_Paulo';
+      let current;
+      if (testTime) {
+        current = testTime;
+      } else {
+        const formatter = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+        const parts = formatter.formatToParts(now);
+        const hh = parts.find(p => p.type === 'hour')?.value || '00';
+        const mm = parts.find(p => p.type === 'minute')?.value || '00';
+        current = `${hh}:${mm}`;
+      }
+      
+      logger.info({ 
+        scheduling_id: s.id, 
+        fixed_time: fixed, 
+        timezone: tz, 
+        current_time: current,
+        match: current === fixed
+      }, 'checking fixed-time notification');
+      
+      if (current !== fixed) continue;
+
+      // Preferir sempre o novo formato baseado em next_day_forecast
+      let title;
+      let body;
+      let data = { scheduling_id: s.id };
+
+      if (s.next_day_forecast && s.next_day_forecast.best_window) {
+        const f = s.next_day_forecast.best_window;
+
+        const styleEmoji = getStyleEmoji(s.preferences?.surf_style || ['any']);
+        const score = f.score || 0;
+        const scoreDisplay = (score / 10).toFixed(1);
+        const conditions = f.conditions_summary || 'boas condições';
+        const time = f.time || '07:00';
+
+        const swellHeight = f.swell_height ?? 0;
+        const swellPeriod = f.swell_period ?? 0;
+        const swellDirText = f.swell_direction_text || 'S';
+        const windSpeed = f.wind_speed ?? 0;
+        const powerKwm = f.power_kwm ?? 0;
+
+        title = `${styleEmoji} Score ${scoreDisplay} - ${conditions} - BEST TIME ${time} hrs`;
+        body = `${swellHeight.toFixed(1)}m, ${swellPeriod}s, ${swellDirText} ${windSpeed}km/h - Energia: ${powerKwm.toFixed(1)} kW/m`;
+
+        data = {
+          ...data,
+          forecast_date: f.date,
+          best_time: time,
+          score,
+          swell_height: swellHeight,
+          swell_direction_text: swellDirText,
+          swell_period: swellPeriod,
+          wind_speed: windSpeed,
+          power_kwm: powerKwm,
+          conditions_summary: conditions
+        };
+      } else {
+        // Fallback antigo, caso ainda não exista forecast salvo
+        title = '⏰ Lembrete SurfCheck';
+        body = 'Seu lembrete diário está ativo. Abra para ver as melhores janelas!';
+      }
+
+      const n = {
+        id: `fixed_${s.id}_${now.toISOString().slice(0,16)}`,
+        type: 'fixed_time',
+        scheduling_id: s.id,
+        uid: s.uid,
+        title,
+        body,
+        data,
+        priority: 'normal',
+        created_at: new Date(),
+        scheduled_for: new Date()
+      };
+      const ok = await sendPushNotification(n);
+      results.push({ scheduling_id: s.id, ok });
+    }
+
+    logger.info({ triggered: results.length }, 'processed fixed-time notifications');
+    return results;
+  } catch (e) {
+    logger.error({ error: e.message }, 'failed to process fixed-time notifications');
+    return [];
+  }
 }

@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import logger from '../utils/logger.js';
-import { getFirestore } from '../utils/firebase.js';
+import { getFirestore } from './firebase.service.js';
 
 const SG_BASE = 'https://api.stormglass.io/v2';
 

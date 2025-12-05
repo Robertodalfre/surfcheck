@@ -30,7 +30,7 @@ const SurfConditions = ({
   board = null,
 }: ConditionProps) => {
   // Log para debug
-  console.log('[SURF_CONDITIONS] Props received:', { advice, board });
+  // console.log('[SURF_CONDITIONS] Props received:', { advice, board });
   
   const tempColor = (() => {
     const lbl = (noteLabel || '').toLowerCase();

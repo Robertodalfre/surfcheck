@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import './select-fix.css';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,14 +16,13 @@ import {
 import { 
   SchedulingPreferences, 
   NotificationSettings, 
-  CreateSchedulingRequest,
   TimeWindow
 } from '@/types/scheduling';
-import { SpotMeta } from '@/lib/api';
+import { CreateMultiSchedulingRequest } from '@/hooks/useMultiScheduling';
+import RegionSelector from './RegionSelector';
 
-interface SchedulingConfigProps {
-  spots: SpotMeta[];
-  onSubmit: (data: CreateSchedulingRequest) => void;
+interface MultiSchedulingConfigProps {
+  onSubmit: (data: CreateMultiSchedulingRequest) => void;
   onCancel: () => void;
   loading?: boolean;
 }
@@ -46,8 +45,9 @@ const WIND_PREFERENCES = [
   { id: 'any' as const, label: 'Qualquer vento', description: 'Não me importo com vento', icon: '🌪️' }
 ];
 
-export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = false }: SchedulingConfigProps) {
-  const [selectedSpot, setSelectedSpot] = useState<string>('');
+export default function MultiSchedulingConfig({ onSubmit, onCancel, loading = false }: MultiSchedulingConfigProps) {
+  const [selectedRegion, setSelectedRegion] = useState<string>('');
+  const [selectedSpots, setSelectedSpots] = useState<string[]>([]);
   const [daysAhead, setDaysAhead] = useState<1 | 3 | 5>(3);
   const [timeWindows, setTimeWindows] = useState<TimeWindow[]>(['morning', 'afternoon']);
   const [minScore, setMinScore] = useState<number>(70);
@@ -63,8 +63,6 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
   const [fixedTime, setFixedTime] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string>('America/Sao_Paulo');
 
-  const selectedSpotData = spots.find(s => s.id === selectedSpot);
-
   const handleTimeWindowToggle = (windowId: TimeWindow) => {
     setTimeWindows(prev => {
       if (prev.includes(windowId)) {
@@ -78,7 +76,7 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
   };
 
   const handleSubmit = () => {
-    if (!selectedSpot) return;
+    if (!selectedRegion) return;
 
     const preferences: SchedulingPreferences = {
       days_ahead: daysAhead,
@@ -99,39 +97,26 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
     };
 
     onSubmit({
-      spot_id: selectedSpot,
+      region: selectedRegion,
+      spots: selectedSpots.length > 0 ? selectedSpots : undefined,
       preferences,
       notifications,
       active: true
     });
   };
 
-  const isValid = selectedSpot && timeWindows.length > 0;
+  const isValid = selectedRegion && timeWindows.length > 0;
 
   return (
     <div className="space-y-6">
-      {/* Seleção de Pico */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            🏄‍♂️ Escolha seu Pico
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Select value={selectedSpot} onValueChange={setSelectedSpot}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione um pico para agendar" />
-            </SelectTrigger>
-            <SelectContent className="z-[9999] relative radix-select-content">
-              {spots.map((spot, index) => (
-                <SelectItem key={spot.id} value={spot.id} className="select-item-debug">
-                  {spot.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
+      {/* Seleção de Região */}
+      <RegionSelector
+        selectedRegion={selectedRegion}
+        onRegionChange={setSelectedRegion}
+        selectedSpots={selectedSpots}
+        onSpotsChange={setSelectedSpots}
+        showSpotSelection={true}
+      />
 
       {/* Período de Interesse */}
       <Card>
@@ -290,40 +275,52 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            🔔 Notificações
+            🔔 Notificações Comparativas
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <span className="text-blue-600">ℹ️</span>
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">Notificações Regionais</p>
+                <p>Você receberá comparações entre os melhores picos da região 2x por dia (06:00 e 18:00), mostrando o ranking dos top 3 spots com melhor score.</p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <Label>Notificações Push</Label>
-              <p className="text-sm text-muted-foreground">Receber alertas no dispositivo</p>
+              <p className="text-sm text-muted-foreground">Receber alertas comparativos no dispositivo</p>
             </div>
             <Switch checked={pushEnabled} onCheckedChange={setPushEnabled} />
           </div>
 
           {pushEnabled && (
             <>
-              <div>
-                <Label className="flex items-center justify-between">
-                  Antecedência: <span className="font-mono">{advanceHours}h antes</span>
-                </Label>
-                <Slider
-                  value={[advanceHours]}
-                  onValueChange={(value) => setAdvanceHours(value[0])}
-                  max={6}
-                  min={1}
-                  step={1}
-                  className="mt-2"
-                />
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Resumo Diário</Label>
+                  <p className="text-sm text-muted-foreground">Resumo geral às 8h</p>
+                </div>
+                <Switch checked={dailySummary} onCheckedChange={setDailySummary} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Alertas Especiais</Label>
+                  <p className="text-sm text-muted-foreground">Score &gt; 90 em qualquer pico da região</p>
+                </div>
+                <Switch checked={specialAlerts} onCheckedChange={setSpecialAlerts} />
               </div>
 
               {/* Horário Fixo Diário */}
               <div className="grid grid-cols-1 gap-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label>Horário fixo diário (opcional)</Label>
-                    <p className="text-sm text-muted-foreground">Envio todo dia no mesmo horário</p>
+                    <Label>Horário fixo adicional (opcional)</Label>
+                    <p className="text-sm text-muted-foreground">Além dos horários automáticos (06:00 e 18:00)</p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -345,23 +342,6 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
                     </SelectContent>
                   </Select>
                 </div>
-                <p className="text-xs text-muted-foreground">Dica: escolha um horário 1–2 minutos à frente para testar agora.</p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Resumo Diário</Label>
-                  <p className="text-sm text-muted-foreground">Top 3 janelas do dia às 8h</p>
-                </div>
-                <Switch checked={dailySummary} onCheckedChange={setDailySummary} />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Alertas Especiais</Label>
-                  <p className="text-sm text-muted-foreground">Score &gt; 90 no seu pico</p>
-                </div>
-                <Switch checked={specialAlerts} onCheckedChange={setSpecialAlerts} />
               </div>
             </>
           )}
@@ -378,7 +358,7 @@ export default function SchedulingConfig({ spots, onSubmit, onCancel, loading = 
           disabled={!isValid || loading}
           className="flex-1"
         >
-          {loading ? 'Criando...' : 'Criar Agendamento'}
+          {loading ? 'Criando...' : 'Criar Agendamento Regional'}
         </Button>
       </div>
     </div>

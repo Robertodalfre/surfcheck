@@ -19,6 +19,18 @@ export function initializeFirebase() {
   }
 
   try {
+    // Se estiver em Cloud Functions/Run, use credenciais padrão do ambiente
+    const isCloudEnv = Boolean(process.env.K_SERVICE || process.env.FUNCTION_TARGET || process.env.GOOGLE_CLOUD_PROJECT);
+    if (isCloudEnv) {
+      admin.initializeApp();
+      db = admin.firestore();
+      const databaseId = process.env.FIRESTORE_DATABASE_ID || 'surfcheckid';
+      db.settings({ ignoreUndefinedProperties: true, databaseId });
+      isInitialized = true;
+      logger.info({ project_id: process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT, database_id: databaseId }, 'Firebase Admin initialized with ADC (cloud env)');
+      return db;
+    }
+
     let serviceAccount;
 
     // Tentar carregar credenciais de diferentes formas
@@ -54,7 +66,7 @@ export function initializeFirebase() {
       }
     }
 
-    // Inicializar Firebase Admin
+    // Inicializar Firebase Admin (ambiente local/servidor)
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
       projectId: serviceAccount.project_id
