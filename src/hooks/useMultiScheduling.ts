@@ -36,7 +36,9 @@ export interface CreateMultiSchedulingRequest {
   active?: boolean;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// Use a mesma lógica do api.ts para determinar a URL base
+const envUrl = (import.meta.env.VITE_API_URL ?? '').toString().trim();
+const API_BASE = envUrl || (import.meta.env.PROD ? window.location.origin : 'http://localhost:4000');
 
 export function useMultiScheduling() {
   const [multiSchedulings, setMultiSchedulings] = useState<MultiScheduling[]>([]);

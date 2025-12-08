@@ -2,10 +2,19 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import express from 'express';
+import pino from 'pino';
+
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+
+logger.info('🚀 Iniciando carregamento do index.js...');
+
+// Importar app depois dos logs iniciais
 import app from './src/app.js';
-import { processAllNotifications, sendPushNotification, processFixedTimeNotifications, processRegionComparisonNotifications } from './src/services/notification.service.js';
-import { updateAllNextDayForecasts } from './src/domain/scheduling.model.js';
-import logger from './src/utils/logger.js';
+logger.info('✅ App carregado com sucesso');
+
+// Importar serviços de forma lazy para evitar timeout
+const getNotificationService = () => import('./src/services/notification.service.js');
+const getSchedulingModel = () => import('./src/domain/scheduling.model.js');
 
 // Monta o app tanto na raiz quanto sob /api (compatibilidade)
 const router = express();
@@ -22,6 +31,7 @@ export const notificationsCron15 = onSchedule({
   timeZone: 'America/Sao_Paulo'
 }, async (event) => {
   try {
+    const { processAllNotifications, sendPushNotification } = await getNotificationService();
     const notifications = await processAllNotifications();
     let sent = 0;
     for (const n of notifications) {
@@ -42,6 +52,7 @@ export const regionComparisonMorning = onSchedule({
   timeZone: 'America/Sao_Paulo'
 }, async () => {
   try {
+    const { processRegionComparisonNotifications } = await getNotificationService();
     const results = await processRegionComparisonNotifications();
     const sent = results.filter(r => r.ok).length;
     logger.info({ processed: results.length, sent }, 'region comparison notifications (06:00) processed');
@@ -56,6 +67,7 @@ export const regionComparisonEvening = onSchedule({
   timeZone: 'America/Sao_Paulo'
 }, async () => {
   try {
+    const { processRegionComparisonNotifications } = await getNotificationService();
     const results = await processRegionComparisonNotifications();
     const sent = results.filter(r => r.ok).length;
     logger.info({ processed: results.length, sent }, 'region comparison notifications (18:00) processed');
@@ -71,6 +83,7 @@ export const notificationsFixedEveryMinute = onSchedule({
   timeZone: 'America/Sao_Paulo'
 }, async (event) => {
   try {
+    const { processFixedTimeNotifications } = await getNotificationService();
     await processFixedTimeNotifications();
   } catch (e) {
     logger.error({ error: e.message }, 'cron(1m) fixed-time failed');
@@ -86,6 +99,7 @@ export const updateForecastsDaily = onSchedule({
   try {
     logger.info('starting daily forecast update at 22:00');
     
+    const { updateAllNextDayForecasts } = await getSchedulingModel();
     const results = await updateAllNextDayForecasts();
     const successCount = results.filter(r => r.success).length;
     const totalCount = results.length;
@@ -112,3 +126,5 @@ export const updateForecastsDaily = onSchedule({
     logger.error({ error: e.message }, 'daily forecast update failed');
   }
 });
+
+logger.info('🎉 Firebase Functions inicializadas com sucesso!');

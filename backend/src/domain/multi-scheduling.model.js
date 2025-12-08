@@ -26,11 +26,11 @@ const COLLECTION_NAME = 'multi_schedulings';
 function validatePreferences(preferences = {}) {
   return {
     days_ahead: 3,
-    time_windows: ['morning'],
-    min_score: 60,
+    time_windows: ['morning', 'midday', 'afternoon'], // Expandir janelas para capturar melhor horário
+    min_score: 0, // Score mínimo 0 para capturar todos os horários e mostrar o melhor real
     surf_style: 'any',
     wind_preference: 'any',
-    min_energy: 1.0,
+    min_energy: 0.5, // Energia mínima mais baixa
     ...preferences
   };
 }
@@ -161,4 +161,14 @@ export async function deleteMultiScheduling(id) {
   await db.collection(COLLECTION_NAME).doc(id).delete();
   logger.info({ id }, 'multi scheduling deleted');
   return true;
+}
+
+export async function getActiveMultiSchedulings() {
+  const db = getFirestore();
+  const snap = await db
+    .collection(COLLECTION_NAME)
+    .where('active', '==', true)
+    .get();
+  
+  return snap.docs.map(FirestoreUtils.docToObject);
 }

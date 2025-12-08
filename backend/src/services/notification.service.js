@@ -1,5 +1,6 @@
 import { analyzeWindows } from './window-analysis.service.js';
 import { getSchedulingById, getActiveSchedulings } from '../domain/scheduling.model.js';
+import { getActiveMultiSchedulings } from '../domain/multi-scheduling.model.js';
 import { analyzeRegion } from './multi-spot-analysis.service.js';
 import { getFirestore } from '../services/firebase.service.js';
 import admin from 'firebase-admin';
@@ -614,9 +615,11 @@ export function scheduleNotificationProcessing(intervalMinutes = 30) {
 export async function processFixedTimeNotifications(testTime = null) {
   try {
     const schedulings = await getActiveSchedulings();
+    const multiSchedulings = await getActiveMultiSchedulings();
     const now = new Date();
     const results = [];
 
+    // Processar agendamentos individuais
     for (const s of schedulings) {
       const fixed = s.notifications && s.notifications.fixed_time;
       if (!fixed) continue;
@@ -697,6 +700,48 @@ export async function processFixedTimeNotifications(testTime = null) {
       };
       const ok = await sendPushNotification(n);
       results.push({ scheduling_id: s.id, ok });
+    }
+
+    // Processar multi-schedulings (notificações regionais)
+    for (const ms of multiSchedulings) {
+      const fixed = ms.notifications && ms.notifications.fixed_time;
+      if (!fixed) continue;
+      const tz = (ms.notifications && ms.notifications.timezone) || 'America/Sao_Paulo';
+      let current;
+      if (testTime) {
+        current = testTime;
+      } else {
+        const formatter = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+        const parts = formatter.formatToParts(now);
+        const hh = parts.find(p => p.type === 'hour')?.value || '00';
+        const mm = parts.find(p => p.type === 'minute')?.value || '00';
+        current = `${hh}:${mm}`;
+      }
+      
+      logger.info({ 
+        multi_scheduling_id: ms.id, 
+        fixed_time: fixed, 
+        timezone: tz, 
+        current_time: current,
+        match: current === fixed
+      }, 'checking multi-scheduling fixed-time notification');
+      
+      if (current !== fixed) continue;
+
+      // Gerar notificação regional comparativa
+      try {
+        const notification = await generateRegionComparisonForMulti(ms);
+        if (notification) {
+          const ok = await sendPushNotification(notification);
+          results.push({ multi_scheduling_id: ms.id, ok });
+        }
+      } catch (error) {
+        logger.error({ 
+          multi_scheduling_id: ms.id, 
+          error: error.message 
+        }, 'failed to generate multi-scheduling notification');
+        results.push({ multi_scheduling_id: ms.id, ok: false, error: error.message });
+      }
     }
 
     logger.info({ triggered: results.length }, 'processed fixed-time notifications');

@@ -58,8 +58,23 @@
         "function": { "functionId": "api", "region": "southamerica-east1" }
       },
       {
-        
         "source": "/analytics/**",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/regions",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/regions/**",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/multi-scheduling",
+        "function": { "functionId": "api", "region": "southamerica-east1" }
+      },
+      {
+        "source": "/multi-scheduling/**",
         "function": { "functionId": "api", "region": "southamerica-east1" }
       },
       {

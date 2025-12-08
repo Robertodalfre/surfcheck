@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { getRegions, getSpotsByRegion } from '../domain/spots.model.js';
 import { analyzeRegion } from '../services/multi-spot-analysis.service.js';
+import pino from 'pino';
 
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const router = Router();
+
+logger.info('🗺️ Inicializando router de regiões...');
 
 function requireAuth(req, res, next) {
   const uid = req.headers['x-user-id'] || req.query.uid;
@@ -15,14 +19,18 @@ function requireAuth(req, res, next) {
 
 // Lista regiões disponíveis
 router.get('/', requireAuth, (_req, res) => {
+  logger.info('📍 GET /regions - Listando regiões disponíveis');
   const regions = getRegions();
+  logger.info(`✅ Retornando ${regions.length} regiões`);
   res.json({ regions, total: regions.length });
 });
 
 // Lista spots de uma região
 router.get('/:regionId/spots', requireAuth, (req, res) => {
   const { regionId } = req.params;
+  logger.info(`🏄 GET /regions/${regionId}/spots - Listando spots da região`);
   const spots = getSpotsByRegion(regionId);
+  logger.info(`✅ Retornando ${spots.length} spots para região ${regionId}`);
   res.json({ region: regionId, spots, total: spots.length });
 });
 
@@ -40,4 +48,5 @@ router.get('/:regionId/analysis', requireAuth, async (req, res) => {
   }
 });
 
+logger.info('✅ Router de regiões configurado com sucesso!');
 export default router;

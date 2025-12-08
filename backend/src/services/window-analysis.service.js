@@ -112,9 +112,9 @@ function filterHoursByPreferences(hours, preferences) {
   return hours.filter(hour => {
     const hourOfDay = new Date(hour.time).getHours();
 
-    // Regra global: considerar apenas horas entre 06:00 e 16:00
-    // (independente das preferências de janela do usuário)
-    if (hourOfDay < 6 || hourOfDay > 16) {
+    // Regra global: considerar apenas horas de surf (06:00 e 23:00)
+    // Expandido para incluir todos os horários válidos de surf
+    if (hourOfDay < 6 || hourOfDay > 23) {
       return false;
     }
 

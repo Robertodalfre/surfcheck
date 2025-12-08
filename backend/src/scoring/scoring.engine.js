@@ -261,7 +261,8 @@ function buildReasons(h, s, scores, finalScore) {
   {
     const P = Number.isFinite(h.power_kwm) ? Number(h.power_kwm) : null;
     if (P != null) {
-      if (P < 3) r.push('baixa energia do swell');
+      if (P < 1.5) r.push('força a barra demais - energia muito baixa');
+      else if (P < 3) r.push('baixa energia do swell');
       else if (P < 7) r.push('energia média');
       else if (P < 12) r.push('boa energia do swell');
       else r.push('energia muito forte');
@@ -394,6 +395,11 @@ function analyzeSpotConditions(h, s, params) {
             advice = 'Mar muito pequeno; nem vale molhar o pé';
             context = 'Altura insuficiente para surf';
             board = 'long';
+          } else if (P < 1.5) {
+            // Energia muito baixa (< 150 joules aproximadamente)
+            advice = 'Força a barra - mar sem energia';
+            context = 'Energia muito baixa, condições fracas';
+            board = 'long';
           } else if (T >= 12) {
             advice = 'Meio metrinho maroleiro, mas período bom - longboard vai';
             context = 'Mar pequeno mas período favorável';
@@ -411,7 +417,12 @@ function analyzeSpotConditions(h, s, params) {
         
         // 2. Faixa mista (0.7m - 1.0m) - LONG + SHORT funcionam
         else if (H >= 0.7 && H < 1.0) {
-          if (windCondition === 'offshore' || (v <= 2)) {
+          if (P < 1.5) {
+            // Energia muito baixa mesmo com altura razoável
+            advice = 'Força a barra - altura até vai, mas sem energia';
+            context = 'Altura razoável mas energia muito baixa';
+            board = 'long';
+          } else if (windCondition === 'offshore' || (v <= 2)) {
             if (T >= 10) {
               advice = 'Mar regular com terral - long e short funcionam, escolhe tua vibe';
               context = 'Condições limpas e período bom';

@@ -7,8 +7,12 @@ import {
   deleteMultiScheduling,
 } from '../domain/multi-scheduling.model.js';
 import { analyzeRegion } from '../services/multi-spot-analysis.service.js';
+import pino from 'pino';
 
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const router = Router();
+
+logger.info('🏄‍♂️ Inicializando router de multi-scheduling...');
 
 function requireAuth(req, res, next) {
   const uid = req.headers['x-user-id'] || req.query.uid;
@@ -19,7 +23,9 @@ function requireAuth(req, res, next) {
 
 // Listar agendamentos multi-pico do usuário
 router.get('/', requireAuth, async (req, res) => {
+  logger.info(`📋 GET /multi-scheduling - Listando agendamentos para usuário ${req.user.uid}`);
   const items = await getMultiSchedulingsByUser(req.user.uid);
+  logger.info(`✅ Retornando ${items.length} agendamentos multi-pico`);
   res.json({ items, total: items.length });
 });
 
@@ -80,4 +86,5 @@ router.get('/:id/analysis', requireAuth, async (req, res) => {
   }
 });
 
+logger.info('✅ Router de multi-scheduling configurado com sucesso!');
 export default router;
